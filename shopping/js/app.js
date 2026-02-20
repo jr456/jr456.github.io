@@ -4,12 +4,8 @@ import { categorizeItem, SECTION_ORDER, SECTION_ICONS } from './categories.js';
 // Firebase Configuration
 // ============================================================
 // IMPORTANT: Replace with your own Firebase project config.
-// 1. Go to https://console.firebase.google.com
-// 2. Create a project (or use existing)
-// 3. Enable Authentication > Google sign-in
-// 4. Enable Cloud Firestore
-// 5. Add a Web app and copy the config here
-// 6. In Firestore rules, restrict to your household
+// When these are placeholders, the app runs in DEMO MODE
+// using localStorage (no sign-in required, no sync).
 // ============================================================
 
 const FIREBASE_CONFIG = {
@@ -21,15 +17,53 @@ const FIREBASE_CONFIG = {
   appId: "YOUR_APP_ID"
 };
 
-// ============================================================
-// Initialize Firebase
-// ============================================================
-firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-const db = firebase.firestore();
+// Detect demo mode
+const DEMO_MODE = FIREBASE_CONFIG.apiKey === "YOUR_API_KEY";
 
-// Enable offline persistence
-db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+// ============================================================
+// Firebase init (only when configured)
+// ============================================================
+let auth = null;
+let db = null;
+
+if (!DEMO_MODE) {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  auth = firebase.auth();
+  db = firebase.firestore();
+  db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+}
+
+// ============================================================
+// Demo-mode localStorage backend
+// ============================================================
+const demo = {
+  _load(key) {
+    try { return JSON.parse(localStorage.getItem(`shop_${key}`)) || []; }
+    catch { return []; }
+  },
+  _save(key, data) {
+    localStorage.setItem(`shop_${key}`, JSON.stringify(data));
+  },
+  _id() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  },
+
+  // Items
+  getItems()       { return this._load('items'); },
+  addItem(data)    { const all = this._load('items'); data.id = this._id(); all.unshift(data); this._save('items', all); return data; },
+  updateItem(id, fields) { const all = this._load('items'); const i = all.findIndex(x => x.id === id); if (i >= 0) Object.assign(all[i], fields); this._save('items', all); },
+  deleteItem(id)   { this._save('items', this._load('items').filter(x => x.id !== id)); },
+
+  // Catalogue
+  getCatalogue()   { return this._load('catalogue').sort((a, b) => a.name.localeCompare(b.name)); },
+  addCatalogue(data) { const all = this._load('catalogue'); data.id = this._id(); all.push(data); this._save('catalogue', all); return data; },
+  updateCatalogue(id, fields) { const all = this._load('catalogue'); const i = all.findIndex(x => x.id === id); if (i >= 0) Object.assign(all[i], fields); this._save('catalogue', all); },
+
+  // Stores
+  getStores()      { return this._load('stores').sort((a, b) => a.name.localeCompare(b.name)); },
+  addStore(data)   { const all = this._load('stores'); data.id = this._id(); all.push(data); this._save('stores', all); return data; },
+  deleteStore(id)  { this._save('stores', this._load('stores').filter(x => x.id !== id)); },
+};
 
 // ============================================================
 // DOM References
@@ -56,10 +90,8 @@ const storesEmpty   = $('stores-empty');
 const itemInput     = $('item-input');
 const addBtn        = $('btn-add');
 const addBar        = $('add-bar');
-const addStoreBtn   = $('btn-add-store');
 const autocomplete  = $('autocomplete-list');
 const modalOverlay  = $('modal-overlay');
-const modal         = $('modal');
 const modalTitle    = $('modal-title');
 const modalInput    = $('modal-input');
 const modalExtra    = $('modal-extra');
@@ -80,75 +112,82 @@ let unsubItems = null;
 let unsubCatalogue = null;
 let unsubStores = null;
 
-// Household ID — shared collection key for your family
-// We use a fixed collection so both users share the same list
 const HOUSEHOLD_ID = 'family';
 
-// Firestore collection references
-function itemsRef() {
-  return db.collection('households').doc(HOUSEHOLD_ID).collection('items');
-}
-function catalogueRef() {
-  return db.collection('households').doc(HOUSEHOLD_ID).collection('catalogue');
-}
-function storesRef() {
-  return db.collection('households').doc(HOUSEHOLD_ID).collection('stores');
-}
+function itemsRef() { return db.collection('households').doc(HOUSEHOLD_ID).collection('items'); }
+function catalogueRef() { return db.collection('households').doc(HOUSEHOLD_ID).collection('catalogue'); }
+function storesRef() { return db.collection('households').doc(HOUSEHOLD_ID).collection('stores'); }
 
 // ============================================================
-// Auth
+// Auth / Init
 // ============================================================
-signInBtn.addEventListener('click', () => {
-  const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(err => {
-    // Fallback to redirect for mobile
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
-      auth.signInWithRedirect(provider);
+if (DEMO_MODE) {
+  // Skip auth, go straight into app
+  authScreen.style.display = 'none';
+  appShell.classList.add('active');
+  userAvatar.style.display = 'none';
+  signOutBtn.style.display = 'none';
+  currentUser = { displayName: 'Demo User', email: 'demo@local' };
+  loadDemoData();
+} else {
+  signInBtn.addEventListener('click', () => {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).catch(err => {
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+        auth.signInWithRedirect(provider);
+      } else {
+        showToast('Sign-in failed: ' + err.message);
+      }
+    });
+  });
+
+  signOutBtn.addEventListener('click', () => auth.signOut());
+
+  auth.onAuthStateChanged(user => {
+    currentUser = user;
+    if (user) {
+      authScreen.style.display = 'none';
+      appShell.classList.add('active');
+      userAvatar.src = user.photoURL || '';
+      userAvatar.alt = user.displayName || 'User';
+      subscribeToData();
     } else {
-      showToast('Sign-in failed: ' + err.message);
+      authScreen.style.display = '';
+      appShell.classList.remove('active');
+      unsubscribeAll();
     }
   });
-});
+}
 
-signOutBtn.addEventListener('click', () => {
-  auth.signOut();
-});
+function loadDemoData() {
+  items = demo.getItems();
+  catalogue = demo.getCatalogue();
+  stores = demo.getStores();
+  renderAll();
+}
 
-auth.onAuthStateChanged(user => {
-  currentUser = user;
-  if (user) {
-    authScreen.style.display = 'none';
-    appShell.classList.add('active');
-    userAvatar.src = user.photoURL || '';
-    userAvatar.alt = user.displayName || 'User';
-    subscribeToData();
-  } else {
-    authScreen.style.display = '';
-    appShell.classList.remove('active');
-    unsubscribeAll();
-  }
-});
+function renderAll() {
+  renderList();
+  renderSummary();
+  renderStoreChips();
+  renderCatalogue();
+  renderStores();
+}
 
 // ============================================================
-// Real-time Firestore Subscriptions
+// Real-time Firestore Subscriptions (live mode only)
 // ============================================================
 function subscribeToData() {
   unsubscribeAll();
-
-  // Items
   unsubItems = itemsRef().orderBy('createdAt', 'desc').onSnapshot(snap => {
     items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderList();
     renderSummary();
   });
-
-  // Catalogue
   unsubCatalogue = catalogueRef().orderBy('name').onSnapshot(snap => {
     catalogue = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderCatalogue();
   });
-
-  // Stores
   unsubStores = storesRef().orderBy('name').onSnapshot(snap => {
     stores = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     renderStoreChips();
@@ -173,32 +212,35 @@ function addItem(name, qty = 1) {
   const category = categorizeItem(name);
   const store = currentStore === 'all' ? null : currentStore;
 
-  // Add to active list
-  itemsRef().add({
-    name,
-    category,
-    qty,
-    checked: false,
-    store,
-    addedBy: currentUser.displayName || currentUser.email,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  });
-
-  // Add to catalogue if not already present
-  const nameKey = name.toLowerCase();
-  const existing = catalogue.find(c => c.name.toLowerCase() === nameKey);
-  if (!existing) {
-    catalogueRef().add({
-      name,
-      category,
-      timesAdded: 1,
-      lastAdded: firebase.firestore.FieldValue.serverTimestamp()
+  if (DEMO_MODE) {
+    demo.addItem({
+      name, category, qty, checked: false, store,
+      addedBy: 'Demo User', createdAt: new Date().toISOString()
     });
+    const nameKey = name.toLowerCase();
+    const existing = catalogue.find(c => c.name.toLowerCase() === nameKey);
+    if (!existing) {
+      demo.addCatalogue({ name, category, timesAdded: 1, lastAdded: new Date().toISOString() });
+    } else {
+      demo.updateCatalogue(existing.id, { timesAdded: (existing.timesAdded || 1) + 1, lastAdded: new Date().toISOString() });
+    }
+    loadDemoData();
   } else {
-    catalogueRef().doc(existing.id).update({
-      timesAdded: firebase.firestore.FieldValue.increment(1),
-      lastAdded: firebase.firestore.FieldValue.serverTimestamp()
+    itemsRef().add({
+      name, category, qty, checked: false, store,
+      addedBy: currentUser.displayName || currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    const nameKey = name.toLowerCase();
+    const existing = catalogue.find(c => c.name.toLowerCase() === nameKey);
+    if (!existing) {
+      catalogueRef().add({ name, category, timesAdded: 1, lastAdded: firebase.firestore.FieldValue.serverTimestamp() });
+    } else {
+      catalogueRef().doc(existing.id).update({
+        timesAdded: firebase.firestore.FieldValue.increment(1),
+        lastAdded: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
   }
 
   itemInput.value = '';
@@ -220,19 +262,10 @@ itemInput.addEventListener('keydown', e => {
 // ============================================================
 itemInput.addEventListener('input', () => {
   const q = itemInput.value.trim().toLowerCase();
-  if (q.length < 1) {
-    autocomplete.classList.remove('active');
-    return;
-  }
+  if (q.length < 1) { autocomplete.classList.remove('active'); return; }
 
-  const matches = catalogue
-    .filter(c => c.name.toLowerCase().includes(q))
-    .slice(0, 6);
-
-  if (matches.length === 0) {
-    autocomplete.classList.remove('active');
-    return;
-  }
+  const matches = catalogue.filter(c => c.name.toLowerCase().includes(q)).slice(0, 6);
+  if (matches.length === 0) { autocomplete.classList.remove('active'); return; }
 
   autocomplete.innerHTML = matches.map(m => `
     <div class="autocomplete-option" data-name="${escHtml(m.name)}">
@@ -241,28 +274,22 @@ itemInput.addEventListener('input', () => {
       <span class="ac-category">${escHtml(m.category)}</span>
     </div>
   `).join('');
-
   autocomplete.classList.add('active');
 });
 
 autocomplete.addEventListener('click', e => {
   const opt = e.target.closest('.autocomplete-option');
-  if (opt) {
-    addItem(opt.dataset.name);
-  }
+  if (opt) addItem(opt.dataset.name);
 });
 
 document.addEventListener('click', e => {
-  if (!addBar.contains(e.target)) {
-    autocomplete.classList.remove('active');
-  }
+  if (!addBar.contains(e.target)) autocomplete.classList.remove('active');
 });
 
 // ============================================================
 // Render Shopping List
 // ============================================================
 function renderList() {
-  // Filter by store
   let filtered = items;
   if (currentStore !== 'all') {
     filtered = items.filter(i => i.store === currentStore);
@@ -275,7 +302,6 @@ function renderList() {
   }
   listEmpty.style.display = 'none';
 
-  // Group by category
   const groups = {};
   for (const item of filtered) {
     const cat = item.category || 'Other';
@@ -283,13 +309,11 @@ function renderList() {
     groups[cat].push(item);
   }
 
-  // Sort groups by section order
   const sortedCats = SECTION_ORDER.filter(c => groups[c]);
 
   let html = '';
   for (const cat of sortedCats) {
     const catItems = groups[cat];
-    // Sort: unchecked first, then by name
     catItems.sort((a, b) => {
       if (a.checked !== b.checked) return a.checked ? 1 : -1;
       return a.name.localeCompare(b.name);
@@ -308,43 +332,7 @@ function renderList() {
   }
 
   listContainer.innerHTML = html;
-
-  // Attach event listeners
-  listContainer.querySelectorAll('.item-row').forEach(row => {
-    const id = row.dataset.id;
-
-    row.querySelector('.item-checkbox').addEventListener('click', e => {
-      e.stopPropagation();
-      const item = items.find(i => i.id === id);
-      if (item) {
-        itemsRef().doc(id).update({ checked: !item.checked });
-      }
-    });
-
-    const minusBtn = row.querySelector('.qty-minus');
-    const plusBtn = row.querySelector('.qty-plus');
-
-    minusBtn?.addEventListener('click', e => {
-      e.stopPropagation();
-      const item = items.find(i => i.id === id);
-      if (item && item.qty > 1) {
-        itemsRef().doc(id).update({ qty: item.qty - 1 });
-      }
-    });
-
-    plusBtn?.addEventListener('click', e => {
-      e.stopPropagation();
-      const item = items.find(i => i.id === id);
-      if (item) {
-        itemsRef().doc(id).update({ qty: item.qty + 1 });
-      }
-    });
-
-    row.querySelector('.item-delete')?.addEventListener('click', e => {
-      e.stopPropagation();
-      itemsRef().doc(id).delete();
-    });
-  });
+  attachListListeners();
 }
 
 function renderItemRow(item) {
@@ -355,7 +343,7 @@ function renderItemRow(item) {
       <div class="item-info">
         <div class="item-name">${escHtml(item.name)}</div>
         <div class="item-meta">
-          ${storeName ? escHtml(storeName) + ' · ' : ''}${item.addedBy || ''}
+          ${storeName ? escHtml(storeName) + ' &middot; ' : ''}${item.addedBy || ''}
         </div>
       </div>
       <div class="item-qty">
@@ -368,22 +356,53 @@ function renderItemRow(item) {
   `;
 }
 
+function attachListListeners() {
+  listContainer.querySelectorAll('.item-row').forEach(row => {
+    const id = row.dataset.id;
+
+    row.querySelector('.item-checkbox').addEventListener('click', e => {
+      e.stopPropagation();
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      if (DEMO_MODE) { demo.updateItem(id, { checked: !item.checked }); loadDemoData(); }
+      else { itemsRef().doc(id).update({ checked: !item.checked }); }
+    });
+
+    row.querySelector('.qty-minus')?.addEventListener('click', e => {
+      e.stopPropagation();
+      const item = items.find(i => i.id === id);
+      if (!item || item.qty <= 1) return;
+      if (DEMO_MODE) { demo.updateItem(id, { qty: item.qty - 1 }); loadDemoData(); }
+      else { itemsRef().doc(id).update({ qty: item.qty - 1 }); }
+    });
+
+    row.querySelector('.qty-plus')?.addEventListener('click', e => {
+      e.stopPropagation();
+      const item = items.find(i => i.id === id);
+      if (!item) return;
+      if (DEMO_MODE) { demo.updateItem(id, { qty: (item.qty || 1) + 1 }); loadDemoData(); }
+      else { itemsRef().doc(id).update({ qty: item.qty + 1 }); }
+    });
+
+    row.querySelector('.item-delete')?.addEventListener('click', e => {
+      e.stopPropagation();
+      if (DEMO_MODE) { demo.deleteItem(id); loadDemoData(); }
+      else { itemsRef().doc(id).delete(); }
+    });
+  });
+}
+
 // ============================================================
 // Summary Bar
 // ============================================================
 function renderSummary() {
   let filtered = items;
-  if (currentStore !== 'all') {
-    filtered = items.filter(i => i.store === currentStore);
-  }
+  if (currentStore !== 'all') filtered = items.filter(i => i.store === currentStore);
 
   const total = filtered.length;
   const checked = filtered.filter(i => i.checked).length;
 
-  if (total === 0) {
-    summaryBar.style.display = 'none';
-    return;
-  }
+  if (total === 0) { summaryBar.style.display = 'none'; return; }
 
   summaryBar.style.display = '';
   summaryText.textContent = `${checked}/${total} items checked`;
@@ -391,12 +410,15 @@ function renderSummary() {
 }
 
 clearChecked.addEventListener('click', () => {
-  const batch = db.batch();
   const checkedItems = items.filter(i => i.checked && (currentStore === 'all' || i.store === currentStore));
-  checkedItems.forEach(item => {
-    batch.delete(itemsRef().doc(item.id));
-  });
-  batch.commit();
+  if (DEMO_MODE) {
+    checkedItems.forEach(item => demo.deleteItem(item.id));
+    loadDemoData();
+  } else {
+    const batch = db.batch();
+    checkedItems.forEach(item => batch.delete(itemsRef().doc(item.id)));
+    batch.commit();
+  }
   showToast(`Cleared ${checkedItems.length} items`);
 });
 
@@ -415,7 +437,6 @@ function renderStoreChips() {
   `;
   storeBar.innerHTML = chipsHtml;
 
-  // Reattach listeners
   storeBar.querySelectorAll('.store-chip:not(.add-store)').forEach(chip => {
     chip.addEventListener('click', () => {
       currentStore = chip.dataset.store;
@@ -427,13 +448,14 @@ function renderStoreChips() {
 
   storeBar.querySelector('#btn-add-store')?.addEventListener('click', () => {
     openModal('Add Store', 'Store name (e.g. Costco, Trader Joe\'s)', 'Add', name => {
-      if (name.trim()) {
-        storesRef().add({
-          name: name.trim(),
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        showToast(`Added store "${name.trim()}"`);
+      if (!name.trim()) return;
+      if (DEMO_MODE) {
+        demo.addStore({ name: name.trim(), createdAt: new Date().toISOString() });
+        loadDemoData();
+      } else {
+        storesRef().add({ name: name.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
       }
+      showToast(`Added store "${name.trim()}"`);
     });
   });
 }
@@ -460,7 +482,7 @@ function renderCatalogue(filter = '') {
       <span class="cat-icon">${SECTION_ICONS[c.category] || '📦'}</span>
       <div class="cat-info">
         <div class="cat-name">${escHtml(c.name)}</div>
-        <div class="cat-category">${escHtml(c.category)} · added ${c.timesAdded || 1}x</div>
+        <div class="cat-category">${escHtml(c.category)} &middot; added ${c.timesAdded || 1}x</div>
       </div>
       <button class="cat-add-btn">+ Add</button>
     </div>
@@ -475,9 +497,7 @@ function renderCatalogue(filter = '') {
   });
 }
 
-catSearch.addEventListener('input', () => {
-  renderCatalogue(catSearch.value);
-});
+catSearch.addEventListener('input', () => renderCatalogue(catSearch.value));
 
 // ============================================================
 // Stores Management View
@@ -508,11 +528,14 @@ function renderStores() {
     btn.addEventListener('click', () => {
       const storeId = btn.dataset.storeId;
       if (confirm('Delete this store? Items will remain but lose their store tag.')) {
-        storesRef().doc(storeId).delete();
-        // Unset store from items
-        items.filter(i => i.store === storeId).forEach(item => {
-          itemsRef().doc(item.id).update({ store: null });
-        });
+        if (DEMO_MODE) {
+          demo.deleteStore(storeId);
+          items.filter(i => i.store === storeId).forEach(item => demo.updateItem(item.id, { store: null }));
+          loadDemoData();
+        } else {
+          storesRef().doc(storeId).delete();
+          items.filter(i => i.store === storeId).forEach(item => itemsRef().doc(item.id).update({ store: null }));
+        }
         if (currentStore === storeId) currentStore = 'all';
         showToast('Store deleted');
       }
@@ -535,16 +558,12 @@ tabBar.addEventListener('click', e => {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   $(`view-${currentView}`).classList.add('active');
 
-  // Show/hide store bar and add bar
   storeBar.style.display = currentView === 'list' ? '' : 'none';
   summaryBar.style.display = currentView === 'list' && items.length > 0 ? '' : 'none';
   addBar.style.display = currentView === 'stores' ? 'none' : '';
 
-  if (currentView === 'catalogue') {
-    renderCatalogue(catSearch.value);
-  } else if (currentView === 'stores') {
-    renderStores();
-  }
+  if (currentView === 'catalogue') renderCatalogue(catSearch.value);
+  else if (currentView === 'stores') renderStores();
 });
 
 // ============================================================
@@ -569,9 +588,7 @@ function closeModal() {
 }
 
 modalCancel.addEventListener('click', closeModal);
-modalOverlay.addEventListener('click', e => {
-  if (e.target === modalOverlay) closeModal();
-});
+modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(); });
 
 modalConfirm.addEventListener('click', () => {
   if (modalCallback) modalCallback(modalInput.value);
