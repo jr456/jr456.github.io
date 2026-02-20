@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#e94560">
+  <title>Shopping List</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Auth Screen -->
+  <div id="auth-screen" class="auth-screen">
+    <div class="logo">🛒</div>
+    <h1>Shopping List</h1>
+    <p>Sign in to sync your shared shopping list</p>
+    <button id="google-signin-btn" class="google-btn">
+      <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+  </div>
+
+  <!-- App Shell -->
+  <div id="app" class="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <span style="font-size:1.3rem">🛒</span>
+        <h1>Shopping List</h1>
+      </div>
+      <div class="header-right">
+        <button id="btn-signout" class="icon-btn" title="Sign out">⏻</button>
+        <img id="user-avatar" class="user-avatar" src="" alt="User">
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tab-bar">
+      <button class="tab active" data-view="list">List</button>
+      <button class="tab" data-view="catalogue">Catalogue</button>
+      <button class="tab" data-view="stores">Stores</button>
+    </nav>
+
+    <!-- Store Tag Bar (on list view) -->
+    <div id="store-bar" class="store-bar">
+      <button class="store-chip active" data-store="all">All Stores</button>
+      <!-- Dynamic store chips -->
+      <button class="store-chip add-store" id="btn-add-store">+ Store</button>
+    </div>
+
+    <!-- Summary bar -->
+    <div id="summary-bar" class="summary-bar" style="display:none">
+      <span id="summary-text">0 items</span>
+      <button id="btn-clear-checked" class="clear-checked" style="display:none">Clear checked</button>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- Shopping List View -->
+      <div id="view-list" class="view active">
+        <div id="list-container"></div>
+        <div id="list-empty" class="empty-state">
+          <div class="empty-icon">🛒</div>
+          <h3>Your list is empty</h3>
+          <p>Add items using the bar below</p>
+        </div>
+      </div>
+
+      <!-- Catalogue View -->
+      <div id="view-catalogue" class="view">
+        <div class="catalogue-search">
+          <input type="text" id="catalogue-search" placeholder="Search catalogue...">
+        </div>
+        <div id="catalogue-container"></div>
+        <div id="catalogue-empty" class="empty-state">
+          <div class="empty-icon">📚</div>
+          <h3>Catalogue is empty</h3>
+          <p>Items you add will be saved here for easy re-adding</p>
+        </div>
+      </div>
+
+      <!-- Stores View -->
+      <div id="view-stores" class="view">
+        <div id="stores-container"></div>
+        <div id="stores-empty" class="empty-state">
+          <div class="empty-icon">🏪</div>
+          <h3>No stores yet</h3>
+          <p>Tap "+ Store" on the list view to add a store</p>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Add Item Bar -->
+    <div id="add-bar" class="add-bar">
+      <div class="autocomplete-list" id="autocomplete-list"></div>
+      <div class="add-bar-inner">
+        <input type="text" id="item-input" placeholder="Add an item..." autocomplete="off">
+        <button id="btn-add" class="add-btn">+</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div id="modal-overlay" class="modal-overlay">
+    <div class="modal" id="modal">
+      <h2 id="modal-title">Add Store</h2>
+      <input type="text" id="modal-input" class="modal-input" placeholder="">
+      <div id="modal-extra"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="modal-cancel">Cancel</button>
+        <button class="btn-confirm" id="modal-confirm">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
