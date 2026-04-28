@@ -9,6 +9,7 @@ import {
   addItem, updateItem, setItemDone, deleteItem, setItemSection,
   deleteCatalogueEntry,
   addStore, deleteStore,
+  cloneItems, fetchAllItems,
 } from "./db.js";
 import { SECTIONS, SECTIONS_BY_ID, suggestSection, normalizeName } from "./sections.js";
 
@@ -24,6 +25,13 @@ const state = {
   catalogueIndex: new Map(), // normalized → catalogue entry
   unsubs: [],
   currentTab: "list",
+  // User-overridden open/closed state for sections in the active list.
+  // Map<`${listId}:${sectionId}`, boolean>. Cleared when active list changes.
+  sectionOpen: new Map(),
+  // Cross-list search cache.
+  allItems: [],
+  searchQuery: "",
+  searchLoading: false,
 };
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -110,9 +118,14 @@ function switchTab(name) {
   }
   setView(({
     list: "list-view",
+    search: "search-view",
     catalogue: "catalogue-view",
     stores: "stores-view",
   })[name]);
+  if (name === "search") {
+    refreshSearchData(true);
+    setTimeout(() => document.getElementById("search-input")?.focus(), 0);
+  }
 }
 
 // ── Subscriptions ──────────────────────────────────────────────────────────
@@ -173,6 +186,7 @@ function teardownSubscriptions() {
 const listPicker = document.getElementById("list-picker");
 listPicker.addEventListener("change", () => {
   state.activeListId = listPicker.value;
+  state.sectionOpen.clear();
   resubscribeItems();
   renderListHeader();
 });
@@ -339,17 +353,30 @@ function renderItems() {
 
   for (const [sid, items] of ordered) {
     const sec = SECTIONS_BY_ID[sid] || SECTIONS_BY_ID.other;
-    const card = document.createElement("section");
-    card.className = "section";
+    const allDone = items.every(i => i.done);
+    const key = `${state.activeListId}:${sid}`;
+    const override = state.sectionOpen.get(key);
+    const open = override !== undefined ? override : !allDone;
 
-    const head = document.createElement("div");
+    const card = document.createElement("details");
+    card.className = "section" + (allDone ? " all-done" : "");
+    if (open) card.setAttribute("open", "");
+
+    const head = document.createElement("summary");
     head.className = "section-head";
     head.innerHTML = `
+      <span class="chev">▶</span>
       <span class="icon">${sec.icon}</span>
       <span>${sec.name}</span>
       <span class="count">${items.filter(i => !i.done).length}/${items.length}</span>
     `;
     card.appendChild(head);
+
+    card.addEventListener("toggle", () => {
+      // Record only if it diverges from the default (so a re-render that
+      // doesn't change all-done state will still pick up the user's wish).
+      state.sectionOpen.set(key, card.open);
+    });
 
     const ul = document.createElement("ul");
     ul.className = "items";
@@ -565,6 +592,290 @@ function renderStores() {
 
     li.append(name, count, tag, del);
     root.appendChild(li);
+  }
+}
+
+// ── Rename / delete current list ───────────────────────────────────────────
+
+const renameDialog = document.getElementById("rename-list-dialog");
+const renameForm = document.getElementById("rename-list-form");
+const renameInput = document.getElementById("rename-list-name");
+const renameStore = document.getElementById("rename-list-store");
+const deleteListBtn = document.getElementById("delete-list");
+
+document.getElementById("rename-list").addEventListener("click", () => {
+  const list = state.lists.find(l => l.id === state.activeListId);
+  if (!list) return;
+  renameInput.value = list.name;
+  populateStoreSelect(renameStore, list.storeId || "");
+  renameDialog.showModal();
+  setTimeout(() => renameInput.select(), 0);
+});
+
+renameForm.addEventListener("submit", async (e) => {
+  const submitter = e.submitter;
+  if (!submitter || submitter.value !== "save") return;
+  e.preventDefault();
+  const list = state.lists.find(l => l.id === state.activeListId);
+  if (!list) return;
+  const name = renameInput.value.trim();
+  if (!name) return;
+  await renameList(list.id, name);
+  if ((renameStore.value || null) !== (list.storeId || null)) {
+    await setListStore(list.id, renameStore.value || null);
+  }
+  renameDialog.close();
+  toast("List updated");
+});
+
+deleteListBtn.addEventListener("click", async () => {
+  const list = state.lists.find(l => l.id === state.activeListId);
+  if (!list) return;
+  if (!confirm(`Delete “${list.name}”? Items in this list will also be removed.`)) return;
+  await deleteList(list.id);
+  state.activeListId = null;
+  renameDialog.close();
+  toast("List deleted");
+});
+
+function populateStoreSelect(sel, selectedId) {
+  sel.innerHTML = '<option value="">— None —</option>';
+  for (const s of state.stores) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.name;
+    if (s.id === selectedId) opt.selected = true;
+    sel.appendChild(opt);
+  }
+}
+
+// ── Clone items from another list ──────────────────────────────────────────
+
+const cloneDialog = document.getElementById("clone-dialog");
+const cloneForm = document.getElementById("clone-form");
+const cloneSource = document.getElementById("clone-source");
+const cloneIncludeDone = document.getElementById("clone-include-done");
+const cloneItemsEl = document.getElementById("clone-items");
+const cloneStatus = document.getElementById("clone-status");
+const cloneConfirm = document.getElementById("clone-confirm");
+
+let cloneSourceItems = []; // items currently rendered in the dialog
+
+document.getElementById("clone-from").addEventListener("click", async () => {
+  if (!state.activeListId) return;
+  const others = state.lists.filter(l => l.id !== state.activeListId);
+  if (others.length === 0) {
+    toast("No other lists to clone from");
+    return;
+  }
+  cloneSource.innerHTML = "";
+  for (const l of others) {
+    const opt = document.createElement("option");
+    opt.value = l.id;
+    opt.textContent = l.name;
+    cloneSource.appendChild(opt);
+  }
+  cloneIncludeDone.checked = false;
+  cloneStatus.textContent = "";
+  await loadCloneSource();
+  cloneDialog.showModal();
+});
+
+cloneSource.addEventListener("change", loadCloneSource);
+cloneIncludeDone.addEventListener("change", loadCloneSource);
+
+async function loadCloneSource() {
+  cloneItemsEl.innerHTML = "";
+  cloneStatus.textContent = "Loading…";
+  cloneSourceItems = [];
+  try {
+    const list = state.lists.find(l => l.id === cloneSource.value);
+    if (!list) { cloneStatus.textContent = ""; return; }
+    const all = await fetchAllItems([list]);
+    cloneSourceItems = cloneIncludeDone.checked ? all : all.filter(i => !i.done);
+    if (cloneSourceItems.length === 0) {
+      cloneStatus.textContent = cloneIncludeDone.checked
+        ? "That list has no items."
+        : "That list has no unchecked items.";
+      return;
+    }
+    cloneStatus.textContent = "";
+    renderCloneItems();
+  } catch (e) {
+    console.error(e);
+    cloneStatus.textContent = "Could not load items.";
+  }
+}
+
+function renderCloneItems() {
+  cloneItemsEl.innerHTML = "";
+
+  const tools = document.createElement("div");
+  tools.className = "clone-toolbar";
+  const allBtn = document.createElement("button");
+  allBtn.type = "button"; allBtn.textContent = "Select all";
+  const noneBtn = document.createElement("button");
+  noneBtn.type = "button"; noneBtn.textContent = "Select none";
+  tools.append(allBtn, noneBtn);
+  cloneItemsEl.appendChild(tools);
+
+  for (const it of cloneSourceItems) {
+    const row = document.createElement("label");
+    row.className = "clone-row" + (it.done ? " done" : "");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !it.done; // default: select unchecked items
+    cb.dataset.itemId = it.id;
+    const name = document.createElement("span");
+    name.className = "clone-name";
+    name.textContent = it.name + (it.note ? ` — ${it.note}` : "");
+    const sec = SECTIONS_BY_ID[it.section] || SECTIONS_BY_ID.other;
+    const sectionTag = document.createElement("span");
+    sectionTag.className = "clone-section";
+    sectionTag.textContent = `${sec.icon} ${sec.name}`;
+    row.append(cb, name, sectionTag);
+    cloneItemsEl.appendChild(row);
+  }
+
+  allBtn.addEventListener("click", () => {
+    cloneItemsEl.querySelectorAll("input[type=checkbox]").forEach(c => c.checked = true);
+  });
+  noneBtn.addEventListener("click", () => {
+    cloneItemsEl.querySelectorAll("input[type=checkbox]").forEach(c => c.checked = false);
+  });
+}
+
+cloneForm.addEventListener("submit", async (e) => {
+  const submitter = e.submitter;
+  if (!submitter || submitter.value !== "clone") return;
+  e.preventDefault();
+  const checked = new Set(
+    [...cloneItemsEl.querySelectorAll("input[type=checkbox]:checked")]
+      .map(c => c.dataset.itemId)
+  );
+  const picked = cloneSourceItems.filter(i => checked.has(i.id));
+  if (picked.length === 0) {
+    cloneStatus.textContent = "Pick at least one item.";
+    return;
+  }
+  cloneConfirm.disabled = true;
+  try {
+    const n = await cloneItems(state.activeListId, picked, state.user);
+    cloneDialog.close();
+    toast(`Cloned ${n} item${n === 1 ? "" : "s"}`);
+  } catch (err) {
+    console.error(err);
+    cloneStatus.textContent = "Could not clone items.";
+  } finally {
+    cloneConfirm.disabled = false;
+  }
+});
+
+// ── Cross-list search ──────────────────────────────────────────────────────
+
+const searchInput = document.getElementById("search-input");
+const searchStatus = document.getElementById("search-status");
+const searchResults = document.getElementById("search-results");
+const searchRefresh = document.getElementById("search-refresh");
+
+searchInput.addEventListener("input", () => {
+  state.searchQuery = searchInput.value;
+  renderSearchResults();
+});
+
+searchRefresh.addEventListener("click", () => refreshSearchData(true));
+
+async function refreshSearchData(force = false) {
+  if (state.searchLoading) return;
+  if (!force && state.allItems.length > 0) {
+    renderSearchResults();
+    return;
+  }
+  state.searchLoading = true;
+  searchStatus.textContent = "Loading items from all lists…";
+  try {
+    state.allItems = await fetchAllItems(state.lists);
+    searchStatus.textContent = "";
+    renderSearchResults();
+  } catch (e) {
+    console.error(e);
+    searchStatus.textContent = "Could not load items.";
+  } finally {
+    state.searchLoading = false;
+  }
+}
+
+function renderSearchResults() {
+  searchResults.innerHTML = "";
+  const q = state.searchQuery.trim().toLowerCase();
+  if (!q) {
+    searchStatus.textContent = state.allItems.length
+      ? `Type to search across ${state.allItems.length} item${state.allItems.length === 1 ? "" : "s"} in ${state.lists.length} list${state.lists.length === 1 ? "" : "s"}.`
+      : "No items in any list yet.";
+    return;
+  }
+  const matches = state.allItems.filter(i =>
+    (i.name && i.name.toLowerCase().includes(q)) ||
+    (i.note && i.note.toLowerCase().includes(q)) ||
+    (i.normalized && i.normalized.includes(q))
+  );
+  if (matches.length === 0) {
+    searchStatus.textContent = `No matches for “${state.searchQuery}”.`;
+    return;
+  }
+  searchStatus.textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}.`;
+
+  // Group by list, ordered by list order in state.lists.
+  const byList = new Map();
+  for (const m of matches) {
+    if (!byList.has(m.listId)) byList.set(m.listId, []);
+    byList.get(m.listId).push(m);
+  }
+  const orderedListIds = state.lists
+    .map(l => l.id)
+    .filter(id => byList.has(id));
+
+  for (const lid of orderedListIds) {
+    const list = state.lists.find(l => l.id === lid);
+    const items = byList.get(lid);
+    const group = document.createElement("section");
+    group.className = "search-group";
+
+    const head = document.createElement("div");
+    head.className = "search-group-head";
+    const title = document.createElement("span");
+    title.textContent = list.name;
+    const count = document.createElement("span");
+    count.className = "count";
+    count.textContent = `${items.length} match${items.length === 1 ? "" : "es"}`;
+    const open = document.createElement("button");
+    open.className = "open-list";
+    open.type = "button";
+    open.textContent = "Open list →";
+    open.addEventListener("click", () => {
+      state.activeListId = lid;
+      state.sectionOpen.clear();
+      listPicker.value = lid;
+      resubscribeItems();
+      switchTab("list");
+    });
+    head.append(title, count, open);
+    group.appendChild(head);
+
+    for (const it of items) {
+      const sec = SECTIONS_BY_ID[it.section] || SECTIONS_BY_ID.other;
+      const row = document.createElement("div");
+      row.className = "search-row" + (it.done ? " done" : "");
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = it.name + (it.note ? ` — ${it.note}` : "");
+      const tag = document.createElement("span");
+      tag.className = "section-tag";
+      tag.textContent = `${sec.icon} ${sec.name}`;
+      row.append(name, tag);
+      group.appendChild(row);
+    }
+    searchResults.appendChild(group);
   }
 }
 

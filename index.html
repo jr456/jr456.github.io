@@ -16,6 +16,7 @@
     </div>
     <nav class="tabs" role="tablist">
       <button class="tab" data-tab="list" role="tab" aria-selected="true">List</button>
+      <button class="tab" data-tab="search" role="tab" aria-selected="false">Search</button>
       <button class="tab" data-tab="catalogue" role="tab" aria-selected="false">Catalogue</button>
       <button class="tab" data-tab="stores" role="tab" aria-selected="false">Stores</button>
     </nav>
@@ -41,13 +42,15 @@
 
     <section id="list-view" class="view" hidden>
       <div class="list-header">
-        <div>
+        <div class="list-title-wrap">
           <h2 id="list-title">Shopping list</h2>
+          <button id="rename-list" class="icon-btn" title="Rename list" aria-label="Rename list">✎</button>
           <p id="list-meta" class="muted small"></p>
         </div>
         <div class="list-actions">
           <select id="list-picker" aria-label="Active list"></select>
           <button id="new-list" class="ghost" title="New list">＋</button>
+          <button id="clone-from" class="ghost" title="Clone items from another list">⧉</button>
         </div>
       </div>
 
@@ -79,6 +82,16 @@
       <p id="empty-catalogue" class="muted center" hidden>No items yet. Add something to a list.</p>
     </section>
 
+    <section id="search-view" class="view" hidden>
+      <div class="list-header">
+        <h2>Search all lists</h2>
+        <button id="search-refresh" class="ghost" title="Refresh">↻</button>
+      </div>
+      <input id="search-input" type="search" placeholder="Search items across every list…" autocomplete="off" />
+      <p id="search-status" class="muted small"></p>
+      <div id="search-results" class="search-results"></div>
+    </section>
+
     <section id="stores-view" class="view" hidden>
       <div class="list-header">
         <h2>Stores</h2>
@@ -107,6 +120,47 @@
       <div class="dialog-actions">
         <button value="cancel" class="ghost">Cancel</button>
         <button value="create" class="primary" id="new-list-create">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rename-list-dialog">
+    <form method="dialog" id="rename-list-form">
+      <h3>Rename list</h3>
+      <label>
+        Name
+        <input id="rename-list-name" type="text" required />
+      </label>
+      <label>
+        Store (optional)
+        <select id="rename-list-store"><option value="">— None —</option></select>
+      </label>
+      <div class="dialog-actions space-between">
+        <button value="delete" class="danger" id="delete-list" type="button">Delete list</button>
+        <div>
+          <button value="cancel" class="ghost">Cancel</button>
+          <button value="save" class="primary">Save</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="clone-dialog">
+    <form method="dialog" id="clone-form">
+      <h3>Clone items from another list</h3>
+      <label>
+        Source list
+        <select id="clone-source"></select>
+      </label>
+      <label class="inline">
+        <input id="clone-include-done" type="checkbox" />
+        Include checked items
+      </label>
+      <div id="clone-items" class="clone-items"></div>
+      <p id="clone-status" class="muted small"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="ghost">Cancel</button>
+        <button value="clone" class="primary" id="clone-confirm">Clone selected</button>
       </div>
     </form>
   </dialog>

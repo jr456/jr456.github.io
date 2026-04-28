@@ -100,6 +100,43 @@ export async function setListStore(listId, storeId) {
   });
 }
 
+// Copy items from one list into another. Cloned items always start unchecked
+// and use the current user as `addedBy`. Catalogue is left untouched (these
+// items already exist in it).
+export async function cloneItems(targetListId, sourceItems, user) {
+  if (!sourceItems.length) return 0;
+  const batch = writeBatch(db);
+  for (const it of sourceItems) {
+    const ref = doc(itemsCol(targetListId));
+    batch.set(ref, {
+      name: it.name,
+      normalized: it.normalized,
+      section: it.section,
+      note: it.note || "",
+      done: false,
+      addedBy: user.email,
+      addedAt: serverTimestamp(),
+    });
+  }
+  batch.update(doc(db, "households", HOUSEHOLD_ID, "lists", targetListId), {
+    updatedAt: serverTimestamp(),
+  });
+  await batch.commit();
+  return sourceItems.length;
+}
+
+// One-shot fetch of every item in every list. Used by cross-list search.
+export async function fetchAllItems(lists) {
+  const out = [];
+  await Promise.all(lists.map(async (list) => {
+    const snap = await getDocs(itemsCol(list.id));
+    for (const d of snap.docs) {
+      out.push({ id: d.id, listId: list.id, listName: list.name, ...d.data() });
+    }
+  }));
+  return out;
+}
+
 export async function clearCheckedItems(listId, items) {
   const batch = writeBatch(db);
   for (const it of items) {
