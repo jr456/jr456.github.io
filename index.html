@@ -18,6 +18,7 @@
       <button class="tab" data-tab="list" role="tab" aria-selected="true">List</button>
       <button class="tab" data-tab="search" role="tab" aria-selected="false">Search</button>
       <button class="tab" data-tab="catalogue" role="tab" aria-selected="false">Catalogue</button>
+      <button class="tab" data-tab="categories" role="tab" aria-selected="false">Categories</button>
       <button class="tab" data-tab="stores" role="tab" aria-selected="false">Stores</button>
     </nav>
     <div class="user">
@@ -94,6 +95,15 @@
       <div id="search-results" class="search-results"></div>
     </section>
 
+    <section id="categories-view" class="view" hidden>
+      <div class="list-header">
+        <h2>Categories</h2>
+        <button id="add-category" class="primary small">＋ Add</button>
+      </div>
+      <p class="muted small">Reorder to match the layout of your store. Rename, change icons, or add new ones. Items already in the list keep their assigned category.</p>
+      <ul id="categories-list" class="categories"></ul>
+    </section>
+
     <section id="stores-view" class="view" hidden>
       <div class="list-header">
         <h2>Stores</h2>
@@ -167,6 +177,28 @@
       <div class="dialog-actions">
         <button value="cancel" class="ghost">Cancel</button>
         <button value="clone" class="primary" id="clone-confirm">Clone selected</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="category-dialog">
+    <form method="dialog" id="category-form">
+      <h3 id="category-dialog-title">Edit category</h3>
+      <label>
+        Icon (one emoji)
+        <input id="category-icon" type="text" maxlength="4" required />
+      </label>
+      <label>
+        Name
+        <input id="category-name" type="text" required />
+      </label>
+      <p id="category-status" class="muted small"></p>
+      <div class="dialog-actions space-between">
+        <button value="delete" class="danger" id="category-delete" type="button" hidden>Delete</button>
+        <div>
+          <button value="cancel" class="ghost">Cancel</button>
+          <button value="save" class="primary">Save</button>
+        </div>
       </div>
     </form>
   </dialog>

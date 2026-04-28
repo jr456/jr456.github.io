@@ -5,6 +5,7 @@ import { signIn, signOutCurrent, watchAuth } from "./auth.js";
 import {
   ensureHousehold,
   subscribeLists, subscribeItems, subscribeCatalogue, subscribeStores,
+  subscribeSections, upsertSection, deleteSectionDoc, reorderSections,
   createList, deleteList, renameList, setListStore, setListArchived,
   clearCheckedItems,
   addItem, updateItem, setItemDone, deleteItem, setItemSection,
@@ -12,7 +13,11 @@ import {
   addStore, deleteStore,
   cloneItems, fetchAllItems,
 } from "./db.js";
-import { SECTIONS, SECTIONS_BY_ID, suggestSection, normalizeName } from "./sections.js";
+import {
+  SECTIONS as DEFAULT_SECTIONS,
+  SECTIONS_BY_ID as DEFAULT_SECTIONS_BY_ID,
+  suggestSection, normalizeName,
+} from "./sections.js";
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +29,9 @@ const state = {
   catalogue: [],
   stores: [],
   catalogueIndex: new Map(), // normalized → catalogue entry
+  sectionOverrides: [],   // raw docs from Firestore
+  sections: [],           // merged + ordered sections (active source of truth)
+  sectionsById: new Map(),
   unsubs: [],
   currentTab: "list",
   showArchived: false,
@@ -122,6 +130,7 @@ function switchTab(name) {
     list: "list-view",
     search: "search-view",
     catalogue: "catalogue-view",
+    categories: "categories-view",
     stores: "stores-view",
   })[name]);
   if (name === "search") {
@@ -167,6 +176,56 @@ function startSubscriptions() {
     renderStoreOptions();
     renderListHeader();
   }));
+
+  state.unsubs.push(subscribeSections((overrides) => {
+    state.sectionOverrides = overrides;
+    rebuildSections();
+    renderItems();
+    renderCategories();
+    renderItemSectionOptions();
+  }));
+}
+
+// Merge built-in defaults with Firestore overrides into a single ordered list.
+// Override doc IDs that match a built-in ID replace that built-in's name/icon/order.
+// Override docs with custom: true are new sections appended to the list.
+function rebuildSections() {
+  const overrideMap = new Map(state.sectionOverrides.map(o => [o.id, o]));
+  const merged = [];
+  for (const def of DEFAULT_SECTIONS) {
+    const ov = overrideMap.get(def.id);
+    merged.push({
+      id: def.id,
+      name: ov?.name ?? def.name,
+      icon: ov?.icon ?? def.icon,
+      order: ov?.order ?? def.order,
+      custom: false,
+    });
+    overrideMap.delete(def.id);
+  }
+  for (const ov of overrideMap.values()) {
+    if (!ov.custom) continue; // stray override with no matching built-in; ignore
+    merged.push({
+      id: ov.id,
+      name: ov.name || "Untitled",
+      icon: ov.icon || "🛍️",
+      order: ov.order ?? 1000,
+      custom: true,
+    });
+  }
+  merged.sort((a, b) => a.order - b.order);
+  state.sections = merged;
+  state.sectionsById = new Map(merged.map(s => [s.id, s]));
+}
+
+// Initial population so anything rendering before the first snapshot fires
+// still has section data to lean on.
+rebuildSections();
+
+function getSection(id) {
+  return state.sectionsById.get(id)
+      || state.sectionsById.get("other")
+      || DEFAULT_SECTIONS_BY_ID.other;
 }
 
 let unsubItems = null;
@@ -384,7 +443,7 @@ addInput.addEventListener("input", () => {
   const normalized = normalizeName(raw);
   const existing = state.catalogueIndex.get(normalized);
   const sectionId = existing?.section || suggestSection(normalized);
-  const section = SECTIONS_BY_ID[sectionId];
+  const section = getSection(sectionId);
   addHint.innerHTML = "";
   const label = document.createElement("span");
   label.className = "muted";
@@ -404,7 +463,7 @@ addForm.addEventListener("submit", async (e) => {
   addHint.textContent = "";
   try {
     const { name, section } = await addItem(state.activeListId, raw, state.user);
-    toast(`Added ${name} → ${SECTIONS_BY_ID[section].name}`);
+    toast(`Added ${name} → ${getSection(section).name}`);
   } catch (err) {
     console.error(err);
     toast(err.message || "Could not add item");
@@ -450,13 +509,13 @@ function renderItems() {
 
   // Sort sections by their canonical order.
   const ordered = [...groups.entries()].sort((a, b) => {
-    const oa = SECTIONS_BY_ID[a[0]]?.order ?? 999;
-    const ob = SECTIONS_BY_ID[b[0]]?.order ?? 999;
+    const oa = state.sectionsById.get(a[0])?.order ?? 999;
+    const ob = state.sectionsById.get(b[0])?.order ?? 999;
     return oa - ob;
   });
 
   for (const [sid, items] of ordered) {
-    const sec = SECTIONS_BY_ID[sid] || SECTIONS_BY_ID.other;
+    const sec = getSection(sid);
     const allDone = items.every(i => i.done);
     const key = `${state.activeListId}:${sid}`;
     const override = state.sectionOpen.get(key);
@@ -549,13 +608,18 @@ const itemSection = document.getElementById("item-section");
 const itemNote = document.getElementById("item-note");
 const itemDelete = document.getElementById("item-delete");
 
-// Populate section options once.
-for (const s of SECTIONS) {
-  const opt = document.createElement("option");
-  opt.value = s.id;
-  opt.textContent = `${s.icon} ${s.name}`;
-  itemSection.appendChild(opt);
+function renderItemSectionOptions() {
+  const previous = itemSection.value;
+  itemSection.innerHTML = "";
+  for (const s of state.sections) {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = `${s.icon} ${s.name}`;
+    itemSection.appendChild(opt);
+  }
+  if (previous) itemSection.value = previous;
 }
+renderItemSectionOptions();
 
 let editingItem = null;
 function openItemDialog(item) {
@@ -614,7 +678,7 @@ function renderCatalogue() {
   empty.hidden = true;
 
   for (const c of items) {
-    const sec = SECTIONS_BY_ID[c.section] || SECTIONS_BY_ID.other;
+    const sec = getSection(c.section);
     const row = document.createElement("div");
     row.className = "cat-row";
     row.innerHTML = `
@@ -876,7 +940,7 @@ function renderCloneItems() {
     const name = document.createElement("span");
     name.className = "clone-name";
     name.textContent = it.name + (it.note ? ` — ${it.note}` : "");
-    const sec = SECTIONS_BY_ID[it.section] || SECTIONS_BY_ID.other;
+    const sec = getSection(it.section);
     const sectionTag = document.createElement("span");
     sectionTag.className = "clone-section";
     sectionTag.textContent = `${sec.icon} ${sec.name}`;
@@ -1010,7 +1074,7 @@ function renderSearchResults() {
     group.appendChild(head);
 
     for (const it of items) {
-      const sec = SECTIONS_BY_ID[it.section] || SECTIONS_BY_ID.other;
+      const sec = getSection(it.section);
       const row = document.createElement("div");
       row.className = "search-row" + (it.done ? " done" : "");
       const name = document.createElement("span");
@@ -1023,6 +1087,154 @@ function renderSearchResults() {
       group.appendChild(row);
     }
     searchResults.appendChild(group);
+  }
+}
+
+// ── Categories tab ─────────────────────────────────────────────────────────
+
+const categoriesList = document.getElementById("categories-list");
+const categoryDialog = document.getElementById("category-dialog");
+const categoryForm = document.getElementById("category-form");
+const categoryName = document.getElementById("category-name");
+const categoryIcon = document.getElementById("category-icon");
+const categoryStatus = document.getElementById("category-status");
+const categoryDeleteBtn = document.getElementById("category-delete");
+const categoryDialogTitle = document.getElementById("category-dialog-title");
+
+let editingCategoryId = null; // null = creating new
+
+document.getElementById("add-category").addEventListener("click", () => {
+  editingCategoryId = null;
+  categoryDialogTitle.textContent = "Add category";
+  categoryName.value = "";
+  categoryIcon.value = "🛍️";
+  categoryDeleteBtn.hidden = true;
+  categoryStatus.textContent = "";
+  categoryDialog.showModal();
+  setTimeout(() => categoryName.focus(), 0);
+});
+
+function openEditCategory(section) {
+  editingCategoryId = section.id;
+  categoryDialogTitle.textContent = section.custom ? "Edit category" : "Edit category (built-in)";
+  categoryName.value = section.name;
+  categoryIcon.value = section.icon;
+  categoryDeleteBtn.hidden = !section.custom;
+  categoryStatus.textContent = section.custom
+    ? ""
+    : "Built-in category. Renaming or changing the icon saves a household override.";
+  categoryDialog.showModal();
+  setTimeout(() => categoryName.select(), 0);
+}
+
+categoryForm.addEventListener("submit", async (e) => {
+  const submitter = e.submitter;
+  if (!submitter || submitter.value !== "save") return;
+  e.preventDefault();
+  const name = categoryName.value.trim();
+  const icon = categoryIcon.value.trim() || "🛍️";
+  if (!name) {
+    categoryStatus.textContent = "Name is required.";
+    return;
+  }
+  try {
+    if (editingCategoryId) {
+      await upsertSection(editingCategoryId, { name, icon });
+    } else {
+      const id = `cat-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      const maxOrder = state.sections.reduce((m, s) => Math.max(m, s.order || 0), 0);
+      await upsertSection(id, {
+        name, icon, order: maxOrder + 1, custom: true,
+      });
+    }
+    categoryDialog.close();
+    toast("Category saved");
+  } catch (err) {
+    console.error(err);
+    categoryStatus.textContent = "Could not save.";
+  }
+});
+
+categoryDeleteBtn.addEventListener("click", async () => {
+  if (!editingCategoryId) return;
+  const section = state.sectionsById.get(editingCategoryId);
+  if (!section?.custom) return;
+  const usedCount = countItemsInSection(editingCategoryId);
+  const msg = usedCount > 0
+    ? `Delete “${section.name}”? ${usedCount} item${usedCount === 1 ? "" : "s"} in the current list use it and will move to Other.`
+    : `Delete “${section.name}”?`;
+  if (!confirm(msg)) return;
+  await deleteSectionDoc(editingCategoryId);
+  categoryDialog.close();
+  toast("Category deleted");
+});
+
+function countItemsInSection(sectionId) {
+  return state.items.filter(i => i.section === sectionId).length;
+}
+
+function renderCategories() {
+  if (!categoriesList) return;
+  categoriesList.innerHTML = "";
+  state.sections.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.className = "cat-item";
+
+    const icon = document.createElement("span");
+    icon.className = "icon";
+    icon.textContent = s.icon;
+
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = s.name;
+
+    const meta = document.createElement("span");
+    meta.className = "meta";
+    meta.textContent = s.custom ? "custom" : "built-in";
+
+    const up = document.createElement("button");
+    up.className = "move"; up.type = "button"; up.textContent = "▲"; up.title = "Move up";
+    up.disabled = i === 0;
+    up.addEventListener("click", () => moveCategory(i, -1));
+
+    const down = document.createElement("button");
+    down.className = "move"; down.type = "button"; down.textContent = "▼"; down.title = "Move down";
+    down.disabled = i === state.sections.length - 1;
+    down.addEventListener("click", () => moveCategory(i, +1));
+
+    const edit = document.createElement("button");
+    edit.className = "edit"; edit.type = "button"; edit.textContent = "✎";
+    edit.title = "Edit";
+    edit.addEventListener("click", () => openEditCategory(s));
+
+    li.append(icon, name, meta, up, down, edit);
+    categoriesList.appendChild(li);
+  });
+}
+
+async function moveCategory(index, direction) {
+  const next = index + direction;
+  if (next < 0 || next >= state.sections.length) return;
+  const reordered = [...state.sections];
+  const [moved] = reordered.splice(index, 1);
+  reordered.splice(next, 0, moved);
+  // Persist by writing the new order index for every section. This converts
+  // built-ins into override docs (with name/icon copied) so their order
+  // sticks across reloads.
+  const ops = reordered.map((s, i) => ({
+    id: s.id,
+    data: { name: s.name, icon: s.icon, order: i + 1, custom: !!s.custom },
+  }));
+  // Optimistic local update so the move feels instant.
+  state.sections = reordered.map((s, i) => ({ ...s, order: i + 1 }));
+  state.sectionsById = new Map(state.sections.map(s => [s.id, s]));
+  renderCategories();
+  renderItems();
+  try {
+    await Promise.all(ops.map(o => upsertSection(o.id, o.data)));
+  } catch (err) {
+    console.error(err);
+    toast("Could not save order");
   }
 }
 

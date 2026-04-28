@@ -4,6 +4,9 @@
 // Data model (under /households/{HID}):
 //   catalogue/{normalizedName}  { name, section, addedBy, useCount, lastUsedAt }
 //   stores/{storeId}            { name, createdAt }
+//   sections/{sectionId}        { name, icon, order, custom }
+//                               (overrides built-in sections; "custom: true"
+//                                marks user-created ones)
 //   lists/{listId}              { name, storeId, archived,
 //                                 createdBy, createdAt,
 //                                 updatedBy, updatedAt }
@@ -21,6 +24,7 @@ import { normalizeName, suggestSection, titleCase } from "./sections.js";
 const HH = () => doc(db, "households", HOUSEHOLD_ID);
 const catalogueCol = () => collection(db, "households", HOUSEHOLD_ID, "catalogue");
 const storesCol    = () => collection(db, "households", HOUSEHOLD_ID, "stores");
+const sectionsCol  = () => collection(db, "households", HOUSEHOLD_ID, "sections");
 const listsCol     = () => collection(db, "households", HOUSEHOLD_ID, "lists");
 const itemsCol     = (listId) => collection(db, "households", HOUSEHOLD_ID, "lists", listId, "items");
 
@@ -64,6 +68,28 @@ export function subscribeStores(cb) {
   return onSnapshot(q, snap => {
     cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
+}
+
+export function subscribeSections(cb) {
+  return onSnapshot(sectionsCol(), snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
+export async function upsertSection(id, data) {
+  await setDoc(doc(sectionsCol(), id), data, { merge: true });
+}
+
+export async function deleteSectionDoc(id) {
+  await deleteDoc(doc(sectionsCol(), id));
+}
+
+export async function reorderSections(orderedIds) {
+  const batch = writeBatch(db);
+  orderedIds.forEach((id, i) => {
+    batch.set(doc(sectionsCol(), id), { order: i + 1 }, { merge: true });
+  });
+  await batch.commit();
 }
 
 // ── Lists ──────────────────────────────────────────────────────────────────

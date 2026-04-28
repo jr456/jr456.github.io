@@ -35,6 +35,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
+[hidden] { display: none !important; }
 body {
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg);
@@ -287,6 +288,37 @@ button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
   background: var(--accent-soft); color: var(--accent);
   font-weight: 600;
   padding: 0.3rem 0.7rem;
+}
+
+/* Categories */
+.categories {
+  list-style: none; margin: 1rem 0 0; padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.cat-item {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.55rem 0.9rem;
+  border-top: 1px solid var(--line);
+}
+.cat-item:first-child { border-top: none; }
+.cat-item .icon { font-size: 1.2rem; width: 1.4rem; text-align: center; }
+.cat-item .name { flex: 1; }
+.cat-item .meta {
+  font-size: 0.75rem; color: var(--ink-2);
+  background: var(--surface-2);
+  padding: 0.05rem 0.45rem; border-radius: 999px;
+}
+.cat-item .move {
+  background: transparent; color: var(--ink-2);
+  padding: 0.15rem 0.4rem; font-size: 1rem; line-height: 1;
+}
+.cat-item .move:disabled { opacity: 0.3; cursor: default; }
+.cat-item .edit {
+  background: transparent; color: var(--ink-2);
+  padding: 0.25rem 0.5rem;
 }
 
 /* Stores */
