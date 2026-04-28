@@ -19,8 +19,8 @@ export const FIREBASE_CONFIG = {
 // Lowercased Google account emails allowed to sign in. Anyone else gets
 // signed straight back out.
 export const ALLOWED_EMAILS = [
-  "you@example.com",
-  "wife@example.com",
+  "rosten1@gmail.com",
+  "123riki@gmail.com",
 ];
 
 // All authorized users share one household document. Pick any string; both
