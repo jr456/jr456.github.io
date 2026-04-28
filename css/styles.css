@@ -257,13 +257,41 @@ button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
   content: "✓"; font-size: 0.9rem; font-weight: 700;
 }
 .item-text { flex: 1; min-width: 0; }
-.item-name { font-weight: 500; }
+.item-name { font-weight: 500; display: inline-flex; align-items: baseline; gap: 0.4rem; }
 .item-name.done { text-decoration: line-through; color: var(--muted); }
+.item-name.done .item-qty { text-decoration: line-through; }
+.item-qty {
+  font-size: 0.78rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
 .item-note { color: var(--ink-2); font-size: 0.8rem; }
+.item-bumpers { display: inline-flex; gap: 0.15rem; }
+.item-bumpers .bump {
+  background: var(--surface-2);
+  color: var(--ink);
+  padding: 0.1rem 0.55rem;
+  font-size: 1rem;
+  line-height: 1.2;
+  min-width: 1.9rem;
+  border-radius: 6px;
+}
+.item-bumpers .bump:disabled { opacity: 0.35; cursor: default; }
 .item-edit {
   background: transparent; color: var(--ink-2);
   padding: 0.3rem 0.5rem;
 }
+
+.cat-controls {
+  display: flex; gap: 0.4rem; align-items: center;
+}
+.cat-controls select { width: auto; }
+.cat-controls input { min-width: 8rem; }
 
 /* Catalogue */
 .catalogue {
@@ -283,6 +311,10 @@ button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
   font-size: 0.8rem; color: var(--ink-2);
   background: var(--surface-2);
   padding: 0.1rem 0.5rem; border-radius: 999px;
+}
+.cat-use {
+  color: var(--ink-2); font-size: 0.85rem;
+  min-width: 2.5rem; text-align: right;
 }
 .cat-add {
   background: var(--accent-soft); color: var(--accent);

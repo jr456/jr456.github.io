@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shopping cart">
+  <rect width="512" height="512" rx="96" fill="#1f7a4d"/>
+  <g fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <!-- handle -->
+    <path d="M 92 132 L 156 132 L 200 350"/>
+    <!-- basket -->
+    <path d="M 158 200 L 432 200 L 392 326 L 220 326 Z"/>
+    <!-- cross-bar suggesting items -->
+    <path d="M 200 248 L 410 248"/>
+    <path d="M 220 290 L 392 290"/>
+  </g>
+  <!-- wheels -->
+  <circle cx="240" cy="392" r="28" fill="#ffffff"/>
+  <circle cx="372" cy="392" r="28" fill="#ffffff"/>
+</svg>

@@ -1,0 +1,41 @@
+{
+  "name": "Shopping List",
+  "short_name": "Shopping",
+  "description": "Shared household shopping list",
+  "id": "/",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f5f1",
+  "theme_color": "#1f7a4d",
+  "categories": ["productivity", "lifestyle", "shopping"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Search",
+      "short_name": "Search",
+      "url": "./?tab=search",
+      "description": "Search across all lists"
+    },
+    {
+      "name": "Catalogue",
+      "short_name": "Catalogue",
+      "url": "./?tab=catalogue",
+      "description": "Browse the household catalogue"
+    }
+  ]
+}

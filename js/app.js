@@ -337,6 +337,14 @@ function renderListHeader() {
   }
 }
 
+function tsToMillis(ts) {
+  if (!ts) return 0;
+  if (ts.toMillis) return ts.toMillis();
+  if (ts.toDate) return ts.toDate().getTime();
+  if (ts instanceof Date) return ts.getTime();
+  return 0;
+}
+
 function displayName(email) {
   if (!email) return "";
   const at = email.indexOf("@");
@@ -461,14 +469,51 @@ addForm.addEventListener("submit", async (e) => {
   if (!raw || !state.activeListId) return;
   addInput.value = "";
   addHint.textContent = "";
+  const { name: parsedName, quantity } = parseQuantityInput(raw);
   try {
-    const { name, section } = await addItem(state.activeListId, raw, state.user);
-    toast(`Added ${name} → ${getSection(section).name}`);
+    const { name, section } = await addItem(
+      state.activeListId, parsedName, state.user, { quantity }
+    );
+    const qSuffix = quantity ? ` (${formatQuantity(quantity)})` : "";
+    toast(`Added ${name}${qSuffix} → ${getSection(section).name}`);
   } catch (err) {
     console.error(err);
     toast(err.message || "Could not add item");
   }
 });
+
+// Pull a leading or trailing quantity out of free-form input.
+//   "2 milk"        → { name: "milk",    quantity: "2" }
+//   "2 lb chicken"  → { name: "chicken", quantity: "2 lb" }
+//   "milk x 2"      → { name: "milk",    quantity: "2" }
+//   "milk × 3"      → { name: "milk",    quantity: "3" }
+//   "milk"          → { name: "milk",    quantity: ""  }
+const UNIT_RE = "(?:lb|lbs|oz|g|kg|ml|l|qt|pt|gal|pkg|pack|dozen|count|ct|bag|bags|box|boxes|can|cans|bottle|bottles)";
+export function parseQuantityInput(raw) {
+  let s = (raw || "").trim();
+  if (!s) return { name: "", quantity: "" };
+  let m = s.match(/^(.*?)\s*[xX×]\s*(\d+(?:\.\d+)?)$/);
+  if (m && m[1].trim()) return { name: m[1].trim(), quantity: m[2] };
+  m = s.match(new RegExp(`^(\\d+(?:\\.\\d+)?\\s*${UNIT_RE})\\s+(.+)$`, "i"));
+  if (m) return { name: m[2].trim(), quantity: m[1].replace(/\s+/g, " ").trim() };
+  m = s.match(/^(\d+(?:\.\d+)?)\s*[xX×]\s+(.+)$/);
+  if (m) return { name: m[2].trim(), quantity: m[1] };
+  m = s.match(/^(\d+(?:\.\d+)?)\s+(.+)$/);
+  if (m) return { name: m[2].trim(), quantity: m[1] };
+  return { name: s, quantity: "" };
+}
+
+// "× 2" for bare numbers, the raw value otherwise.
+function formatQuantity(q) {
+  if (!q) return "";
+  return /^\d+(?:\.\d+)?$/.test(q) ? `× ${q}` : q;
+}
+
+// Numeric quantity if the value is just a number; null otherwise.
+function numericQuantity(q) {
+  if (!q) return 0;
+  return /^\d+(?:\.\d+)?$/.test(q) ? Number(q) : null;
+}
 
 // ── Catalogue suggestions (datalist) ───────────────────────────────────────
 
@@ -581,6 +626,12 @@ function itemRow(item) {
   const name = document.createElement("div");
   name.className = "item-name" + (item.done ? " done" : "");
   name.textContent = item.name;
+  if (item.quantity) {
+    const qty = document.createElement("span");
+    qty.className = "item-qty";
+    qty.textContent = formatQuantity(item.quantity);
+    name.appendChild(qty);
+  }
   txt.appendChild(name);
   if (item.note) {
     const note = document.createElement("div");
@@ -589,14 +640,42 @@ function itemRow(item) {
     txt.appendChild(note);
   }
 
+  // Bumpers: only meaningful when quantity is empty or numeric.
+  const numeric = numericQuantity(item.quantity);
+  const bumpers = document.createElement("div");
+  bumpers.className = "item-bumpers";
+  if (numeric !== null && !item.done) {
+    const minus = document.createElement("button");
+    minus.className = "bump"; minus.type = "button"; minus.textContent = "−";
+    minus.title = "Decrease quantity";
+    minus.disabled = numeric <= 1;
+    minus.addEventListener("click", () => bumpQuantity(item, -1));
+    const plus = document.createElement("button");
+    plus.className = "bump"; plus.type = "button"; plus.textContent = "+";
+    plus.title = "Increase quantity";
+    plus.addEventListener("click", () => bumpQuantity(item, +1));
+    bumpers.append(minus, plus);
+  }
+
   const edit = document.createElement("button");
   edit.className = "item-edit";
   edit.title = "Edit";
   edit.textContent = "✎";
   edit.addEventListener("click", () => openItemDialog(item));
 
-  li.append(cb, lbl, txt, edit);
+  li.append(cb, lbl, txt, bumpers, edit);
   return li;
+}
+
+async function bumpQuantity(item, delta) {
+  const current = numericQuantity(item.quantity);
+  if (current === null) return; // free-text quantity; user must edit dialog
+  let next = (current || 1) + delta;
+  if (next < 1) return;
+  // Treat 1 as "no quantity" so the row reads as a single thing.
+  const newQty = next === 1 ? "" : String(next);
+  await updateItem(state.activeListId, item.id,
+    { quantity: newQty }, state.user);
 }
 
 // ── Item edit dialog ───────────────────────────────────────────────────────
@@ -605,6 +684,7 @@ const itemDialog = document.getElementById("item-dialog");
 const itemForm = document.getElementById("item-form");
 const itemName = document.getElementById("item-name");
 const itemSection = document.getElementById("item-section");
+const itemQuantity = document.getElementById("item-quantity");
 const itemNote = document.getElementById("item-note");
 const itemDelete = document.getElementById("item-delete");
 
@@ -625,6 +705,7 @@ let editingItem = null;
 function openItemDialog(item) {
   editingItem = item;
   itemName.value = item.name;
+  itemQuantity.value = item.quantity || "";
   itemSection.value = item.section || "other";
   itemNote.value = item.note || "";
   itemDialog.showModal();
@@ -644,6 +725,7 @@ itemForm.addEventListener("submit", async (e) => {
   const patch = {
     name: itemName.value.trim() || editingItem.name,
     note: itemNote.value.trim(),
+    quantity: itemQuantity.value.trim(),
   };
   const newSection = itemSection.value;
   if (newSection !== editingItem.section) {
@@ -659,7 +741,16 @@ itemForm.addEventListener("submit", async (e) => {
 // ── Catalogue view ─────────────────────────────────────────────────────────
 
 const catalogueSearch = document.getElementById("catalogue-search");
+const catalogueSort = document.getElementById("catalogue-sort");
 catalogueSearch.addEventListener("input", renderCatalogue);
+catalogueSort.addEventListener("change", () => {
+  try { localStorage.setItem("catSort", catalogueSort.value); } catch {}
+  renderCatalogue();
+});
+try {
+  const saved = localStorage.getItem("catSort");
+  if (saved) catalogueSort.value = saved;
+} catch {}
 
 function renderCatalogue() {
   const root = document.getElementById("catalogue-list");
@@ -667,9 +758,17 @@ function renderCatalogue() {
   const q = catalogueSearch.value.trim().toLowerCase();
   root.innerHTML = "";
 
+  const sortFn = ({
+    frequency: (a, b) =>
+      (b.useCount || 0) - (a.useCount || 0) || a.name.localeCompare(b.name),
+    recent: (a, b) =>
+      tsToMillis(b.lastUsedAt) - tsToMillis(a.lastUsedAt) || a.name.localeCompare(b.name),
+    alpha: (a, b) => a.name.localeCompare(b.name),
+  })[catalogueSort.value] || ((a, b) => a.name.localeCompare(b.name));
+
   const items = state.catalogue
     .filter(c => !q || c.name.toLowerCase().includes(q))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort(sortFn);
 
   if (items.length === 0) {
     empty.hidden = false;
@@ -681,12 +780,20 @@ function renderCatalogue() {
     const sec = getSection(c.section);
     const row = document.createElement("div");
     row.className = "cat-row";
-    row.innerHTML = `
-      <span class="cat-name"></span>
-      <span class="cat-section"></span>
-    `;
-    row.children[0].textContent = c.name;
-    row.children[1].textContent = `${sec.icon} ${sec.name}`;
+    const nameEl = document.createElement("span");
+    nameEl.className = "cat-name";
+    nameEl.textContent = c.name;
+    const sectionEl = document.createElement("span");
+    sectionEl.className = "cat-section";
+    sectionEl.textContent = `${sec.icon} ${sec.name}`;
+    const useEl = document.createElement("span");
+    useEl.className = "cat-use";
+    if (c.useCount) {
+      useEl.textContent = `× ${c.useCount}`;
+      const last = formatRelative(c.lastUsedAt);
+      if (last) useEl.title = `Last added ${last}`;
+    }
+    row.append(nameEl, sectionEl, useEl);
 
     const add = document.createElement("button");
     add.className = "cat-add";
@@ -939,7 +1046,9 @@ function renderCloneItems() {
     cb.dataset.itemId = it.id;
     const name = document.createElement("span");
     name.className = "clone-name";
-    name.textContent = it.name + (it.note ? ` — ${it.note}` : "");
+    name.textContent = it.name
+      + (it.quantity ? ` ${formatQuantity(it.quantity)}` : "")
+      + (it.note ? ` — ${it.note}` : "");
     const sec = getSection(it.section);
     const sectionTag = document.createElement("span");
     sectionTag.className = "clone-section";
@@ -1079,7 +1188,9 @@ function renderSearchResults() {
       row.className = "search-row" + (it.done ? " done" : "");
       const name = document.createElement("span");
       name.className = "name";
-      name.textContent = it.name + (it.note ? ` — ${it.note}` : "");
+      name.textContent = it.name
+      + (it.quantity ? ` ${formatQuantity(it.quantity)}` : "")
+      + (it.note ? ` — ${it.note}` : "");
       const tag = document.createElement("span");
       tag.className = "section-tag";
       tag.textContent = `${sec.icon} ${sec.name}`;
@@ -1235,6 +1346,25 @@ async function moveCategory(index, direction) {
   } catch (err) {
     console.error(err);
     toast("Could not save order");
+  }
+}
+
+// ── Service worker (PWA) ───────────────────────────────────────────────────
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
+  });
+}
+
+// Honor ?tab=… from manifest shortcuts.
+{
+  const params = new URLSearchParams(location.search);
+  const t = params.get("tab");
+  if (t && ["list", "search", "catalogue", "categories", "stores"].includes(t)) {
+    state.currentTab = t;
   }
 }
 

@@ -10,8 +10,8 @@
 //   lists/{listId}              { name, storeId, archived,
 //                                 createdBy, createdAt,
 //                                 updatedBy, updatedAt }
-//   lists/{listId}/items/{id}   { name, normalized, section, note, done,
-//                                 addedBy, addedAt, doneAt? }
+//   lists/{listId}/items/{id}   { name, normalized, section, note, quantity,
+//                                 done, addedBy, addedAt, doneAt? }
 
 import {
   db,
@@ -165,6 +165,7 @@ export async function cloneItems(targetListId, sourceItems, user) {
       normalized: it.normalized,
       section: it.section,
       note: it.note || "",
+      quantity: it.quantity || "",
       done: false,
       addedBy: user.email,
       addedAt: serverTimestamp(),
@@ -221,6 +222,7 @@ export async function addItem(listId, rawName, user, opts = {}) {
     normalized,
     section,
     note: opts.note || "",
+    quantity: opts.quantity || "",
     done: false,
     addedBy: user.email,
     addedAt: serverTimestamp(),

@@ -4,9 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#1f7a4d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Shopping" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Shopping List</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./css/styles.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%9B%92%3C/text%3E%3C/svg%3E" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
 </head>
 <body>
   <header id="topbar" hidden>
@@ -79,7 +85,14 @@
     <section id="catalogue-view" class="view" hidden>
       <div class="list-header">
         <h2>Catalogue</h2>
-        <input id="catalogue-search" type="search" placeholder="Search…" />
+        <div class="cat-controls">
+          <select id="catalogue-sort" aria-label="Sort">
+            <option value="frequency">Most used</option>
+            <option value="recent">Recently used</option>
+            <option value="alpha">A → Z</option>
+          </select>
+          <input id="catalogue-search" type="search" placeholder="Search…" />
+        </div>
       </div>
       <div id="catalogue-list" class="catalogue"></div>
       <p id="empty-catalogue" class="muted center" hidden>No items yet. Add something to a list.</p>
@@ -209,6 +222,10 @@
       <label>
         Name
         <input id="item-name" type="text" required />
+      </label>
+      <label>
+        Quantity (optional)
+        <input id="item-quantity" type="text" placeholder="e.g. 2 or 2 lb or 1 dozen" />
       </label>
       <label>
         Section

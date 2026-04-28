@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Shopping cart">
+  <!-- maskable: full-bleed background, art shrunk into the safe zone (~80%) -->
+  <rect width="512" height="512" fill="#1f7a4d"/>
+  <g transform="translate(64 64) scale(0.75)">
+    <g fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 92 132 L 156 132 L 200 350"/>
+      <path d="M 158 200 L 432 200 L 392 326 L 220 326 Z"/>
+      <path d="M 200 248 L 410 248"/>
+      <path d="M 220 290 L 392 290"/>
+    </g>
+    <circle cx="240" cy="392" r="28" fill="#ffffff"/>
+    <circle cx="372" cy="392" r="28" fill="#ffffff"/>
+  </g>
+</svg>
