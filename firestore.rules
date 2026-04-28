@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Replace the two emails below with your real allowlist, then paste this
+// whole file into Firebase console → Firestore → Rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function allowed() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [
+             "you@example.com",
+             "wife@example.com"
+           ];
+    }
+
+    // The household doc and everything under it (lists, items, catalogue,
+    // stores) are accessible only to the allowlisted users.
+    match /households/{hid} {
+      allow read, write: if allowed();
+      match /{document=**} {
+        allow read, write: if allowed();
+      }
+    }
+  }
+}
