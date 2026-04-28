@@ -45,10 +45,12 @@
         <div class="list-title-wrap">
           <h2 id="list-title">Shopping list</h2>
           <button id="rename-list" class="icon-btn" title="Rename list" aria-label="Rename list">✎</button>
+          <span id="archived-badge" class="badge" hidden>Archived</span>
           <p id="list-meta" class="muted small"></p>
         </div>
         <div class="list-actions">
           <select id="list-picker" aria-label="Active list"></select>
+          <button id="show-archived" class="ghost small" title="Show or hide archived lists" hidden>Show archived</button>
           <button id="new-list" class="ghost" title="New list">＋</button>
           <button id="clone-from" class="ghost" title="Clone items from another list">⧉</button>
         </div>
@@ -135,8 +137,12 @@
         Store (optional)
         <select id="rename-list-store"><option value="">— None —</option></select>
       </label>
+      <p id="rename-list-meta" class="muted small"></p>
       <div class="dialog-actions space-between">
-        <button value="delete" class="danger" id="delete-list" type="button">Delete list</button>
+        <div>
+          <button value="archive" class="ghost" id="archive-list" type="button">Archive</button>
+          <button value="delete" class="danger" id="delete-list" type="button">Delete list</button>
+        </div>
         <div>
           <button value="cancel" class="ghost">Cancel</button>
           <button value="save" class="primary">Save</button>

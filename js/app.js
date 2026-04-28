@@ -5,7 +5,8 @@ import { signIn, signOutCurrent, watchAuth } from "./auth.js";
 import {
   ensureHousehold,
   subscribeLists, subscribeItems, subscribeCatalogue, subscribeStores,
-  createList, deleteList, renameList, setListStore, clearCheckedItems,
+  createList, deleteList, renameList, setListStore, setListArchived,
+  clearCheckedItems,
   addItem, updateItem, setItemDone, deleteItem, setItemSection,
   deleteCatalogueEntry,
   addStore, deleteStore,
@@ -25,6 +26,7 @@ const state = {
   catalogueIndex: new Map(), // normalized → catalogue entry
   unsubs: [],
   currentTab: "list",
+  showArchived: false,
   // User-overridden open/closed state for sections in the active list.
   // Map<`${listId}:${sectionId}`, boolean>. Cleared when active list changes.
   sectionOpen: new Map(),
@@ -140,8 +142,12 @@ function startSubscriptions() {
       createList({ name: "Shopping list" }, state.user).catch(console.error);
       return;
     }
-    if (!state.activeListId || !lists.find(l => l.id === state.activeListId)) {
-      state.activeListId = lists[0].id;
+    // If the active list is gone or archived (and we're not showing archived),
+    // jump to the first visible one.
+    const visible = visibleLists();
+    const active = lists.find(l => l.id === state.activeListId);
+    if (!active || (active.archived && !state.showArchived)) {
+      state.activeListId = visible[0]?.id || lists[0].id;
       resubscribeItems();
     }
     renderListPicker();
@@ -191,14 +197,37 @@ listPicker.addEventListener("change", () => {
   renderListHeader();
 });
 
+function visibleLists() {
+  return state.lists.filter(l => state.showArchived ? true : !l.archived);
+}
+
 function renderListPicker() {
   listPicker.innerHTML = "";
-  for (const l of state.lists) {
+  const active = state.lists.filter(l => !l.archived);
+  const archived = state.lists.filter(l => l.archived);
+
+  for (const l of active) listPicker.appendChild(makeOpt(l, l.name));
+  if (state.showArchived && archived.length) {
+    const grp = document.createElement("optgroup");
+    grp.label = "Archived";
+    for (const l of archived) grp.appendChild(makeOpt(l, l.name));
+    listPicker.appendChild(grp);
+  }
+  function makeOpt(l, label) {
     const opt = document.createElement("option");
     opt.value = l.id;
-    opt.textContent = l.name;
+    opt.textContent = label;
     if (l.id === state.activeListId) opt.selected = true;
-    listPicker.appendChild(opt);
+    return opt;
+  }
+  // Reflect "Show archived" toggle button label.
+  const btn = document.getElementById("show-archived");
+  if (btn) {
+    const n = archived.length;
+    btn.textContent = state.showArchived
+      ? `Hide archived (${n})`
+      : `Show archived${n ? ` (${n})` : ""}`;
+    btn.hidden = !state.showArchived && n === 0;
   }
 }
 
@@ -206,19 +235,94 @@ function renderListHeader() {
   const list = state.lists.find(l => l.id === state.activeListId);
   const titleEl = document.getElementById("list-title");
   const metaEl = document.getElementById("list-meta");
+  const archivedBadge = document.getElementById("archived-badge");
   if (!list) {
     titleEl.textContent = "Shopping list";
-    metaEl.textContent = "";
+    metaEl.innerHTML = "";
+    if (archivedBadge) archivedBadge.hidden = true;
     return;
   }
   titleEl.textContent = list.name;
+  if (archivedBadge) archivedBadge.hidden = !list.archived;
+
   const store = state.stores.find(s => s.id === list.storeId);
   const left = state.items.filter(i => !i.done).length;
   const total = state.items.length;
+  const top = [];
+  if (store) top.push(`📍 ${store.name}`);
+  top.push(total ? `${left} of ${total} left` : "empty");
+
+  const created = formatRelative(list.createdAt);
+  const updated = formatRelative(list.updatedAt);
+  const createdBy = displayName(list.createdBy);
+  const updatedBy = displayName(list.updatedBy);
+
+  const bottom = [];
+  if (created) bottom.push(`Created ${created}${createdBy ? ` by ${createdBy}` : ""}`);
+  if (updated && (updated !== created || updatedBy !== createdBy)) {
+    bottom.push(`Updated ${updated}${updatedBy ? ` by ${updatedBy}` : ""}`);
+  }
+
+  metaEl.innerHTML = "";
+  const top1 = document.createElement("span");
+  top1.textContent = top.join(" · ");
+  metaEl.appendChild(top1);
+  if (bottom.length) {
+    const br = document.createElement("br");
+    metaEl.appendChild(br);
+    const bot = document.createElement("span");
+    bot.className = "muted small";
+    bot.textContent = bottom.join(" · ");
+    bot.title = absoluteTimes(list);
+    metaEl.appendChild(bot);
+  }
+}
+
+function displayName(email) {
+  if (!email) return "";
+  const at = email.indexOf("@");
+  return at > 0 ? email.slice(0, at) : email;
+}
+
+// Firestore Timestamp → "5 min ago", "yesterday", "Jun 5", or "" if missing.
+function formatRelative(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : (ts instanceof Date ? ts : null);
+  if (!d) return "";
+  const now = new Date();
+  const diffMs = now - d;
+  const sec = Math.round(diffMs / 1000);
+  if (sec < 5) return "just now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const sameYear = d.getFullYear() === now.getFullYear();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return "yesterday";
+  return d.toLocaleDateString(undefined,
+    sameYear ? { month: "short", day: "numeric" }
+             : { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatAbsolute(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : (ts instanceof Date ? ts : null);
+  if (!d) return "";
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+  });
+}
+
+function absoluteTimes(list) {
+  const c = formatAbsolute(list.createdAt);
+  const u = formatAbsolute(list.updatedAt);
   const parts = [];
-  if (store) parts.push(`📍 ${store.name}`);
-  parts.push(total ? `${left} of ${total} left` : "empty");
-  metaEl.textContent = parts.join(" · ");
+  if (c) parts.push(`Created: ${c}${list.createdBy ? ` by ${list.createdBy}` : ""}`);
+  if (u) parts.push(`Updated: ${u}${list.updatedBy ? ` by ${list.updatedBy}` : ""}`);
+  return parts.join("\n");
 }
 
 // ── New list dialog ────────────────────────────────────────────────────────
@@ -373,9 +477,16 @@ function renderItems() {
     card.appendChild(head);
 
     card.addEventListener("toggle", () => {
-      // Record only if it diverges from the default (so a re-render that
-      // doesn't change all-done state will still pick up the user's wish).
-      state.sectionOpen.set(key, card.open);
+      // The toggle event also fires on initial DOM insertion when we set the
+      // `open` attribute, which would otherwise capture the auto-default as a
+      // permanent user override. Only persist when the new state differs from
+      // what the auto-default would render this section.
+      const autoDefault = !allDone;
+      if (card.open === autoDefault) {
+        state.sectionOpen.delete(key);
+      } else {
+        state.sectionOpen.set(key, card.open);
+      }
     });
 
     const ul = document.createElement("ul");
@@ -400,7 +511,7 @@ function itemRow(item) {
   cb.id = id;
   cb.checked = !!item.done;
   cb.addEventListener("change", () => {
-    setItemDone(state.activeListId, item.id, cb.checked).catch(console.error);
+    setItemDone(state.activeListId, item.id, cb.checked, state.user).catch(console.error);
   });
   const lbl = document.createElement("label");
   lbl.htmlFor = id;
@@ -457,7 +568,7 @@ function openItemDialog(item) {
 
 itemDelete.addEventListener("click", async () => {
   if (!editingItem) return;
-  await deleteItem(state.activeListId, editingItem.id);
+  await deleteItem(state.activeListId, editingItem.id, state.user);
   itemDialog.close();
 });
 
@@ -473,10 +584,11 @@ itemForm.addEventListener("submit", async (e) => {
   const newSection = itemSection.value;
   if (newSection !== editingItem.section) {
     await setItemSection(
-      state.activeListId, editingItem.id, editingItem.normalized, newSection
+      state.activeListId, editingItem.id, editingItem.normalized, newSection,
+      state.user,
     );
   }
-  await updateItem(state.activeListId, editingItem.id, patch);
+  await updateItem(state.activeListId, editingItem.id, patch, state.user);
   itemDialog.close();
 });
 
@@ -578,7 +690,7 @@ function renderStores() {
     tag.title = "Tag the active shopping list with this store";
     tag.addEventListener("click", async () => {
       if (!state.activeListId) return;
-      await setListStore(state.activeListId, s.id);
+      await setListStore(state.activeListId, s.id, state.user);
       toast(`Tagged list with ${s.name}`);
     });
 
@@ -601,16 +713,51 @@ const renameDialog = document.getElementById("rename-list-dialog");
 const renameForm = document.getElementById("rename-list-form");
 const renameInput = document.getElementById("rename-list-name");
 const renameStore = document.getElementById("rename-list-store");
+const renameMeta = document.getElementById("rename-list-meta");
 const deleteListBtn = document.getElementById("delete-list");
+const archiveBtn = document.getElementById("archive-list");
 
 document.getElementById("rename-list").addEventListener("click", () => {
   const list = state.lists.find(l => l.id === state.activeListId);
   if (!list) return;
   renameInput.value = list.name;
   populateStoreSelect(renameStore, list.storeId || "");
+  archiveBtn.textContent = list.archived ? "Unarchive" : "Archive";
+  renameMeta.textContent = listMetaSummary(list);
   renameDialog.showModal();
   setTimeout(() => renameInput.select(), 0);
 });
+
+archiveBtn.addEventListener("click", async () => {
+  const list = state.lists.find(l => l.id === state.activeListId);
+  if (!list) return;
+  const next = !list.archived;
+  await setListArchived(list.id, next, state.user);
+  renameDialog.close();
+  toast(next ? "List archived" : "List unarchived");
+  if (next && !state.showArchived) {
+    // active list just disappeared from the picker; subscribeLists will jump
+    // us to the next visible one.
+  }
+});
+
+document.getElementById("show-archived").addEventListener("click", () => {
+  state.showArchived = !state.showArchived;
+  renderListPicker();
+});
+
+function listMetaSummary(list) {
+  const parts = [];
+  if (list.createdAt) {
+    const c = formatAbsolute(list.createdAt);
+    parts.push(`Created ${c}${list.createdBy ? ` by ${list.createdBy}` : ""}`);
+  }
+  if (list.updatedAt) {
+    const u = formatAbsolute(list.updatedAt);
+    parts.push(`Updated ${u}${list.updatedBy ? ` by ${list.updatedBy}` : ""}`);
+  }
+  return parts.join("\n");
+}
 
 renameForm.addEventListener("submit", async (e) => {
   const submitter = e.submitter;
@@ -620,9 +767,9 @@ renameForm.addEventListener("submit", async (e) => {
   if (!list) return;
   const name = renameInput.value.trim();
   if (!name) return;
-  await renameList(list.id, name);
+  await renameList(list.id, name, state.user);
   if ((renameStore.value || null) !== (list.storeId || null)) {
-    await setListStore(list.id, renameStore.value || null);
+    await setListStore(list.id, renameStore.value || null, state.user);
   }
   renameDialog.close();
   toast("List updated");

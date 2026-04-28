@@ -157,12 +157,25 @@ input:focus, select:focus, button:focus-visible {
 }
 .list-title-wrap {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto auto;
   column-gap: 0.4rem;
   align-items: center;
 }
 .list-title-wrap h2 { margin-bottom: 0; }
-.list-title-wrap p { grid-column: 1 / -1; }
+.list-title-wrap p { grid-column: 1 / -1; line-height: 1.35; }
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
 .icon-btn {
   background: transparent;
   color: var(--ink-2);
@@ -309,6 +322,7 @@ dialog label.inline {
   flex-direction: row; align-items: center; gap: 0.5rem;
   color: var(--ink); font-size: 0.95rem;
 }
+#rename-list-meta { white-space: pre-line; line-height: 1.4; }
 dialog label.inline input { width: auto; }
 
 .clone-items {
