@@ -5,7 +5,7 @@
 // Cross-origin requests (Firebase, gstatic CDN modules, Google sign-in) are
 // passed straight through to the browser — never cached, never intercepted.
 
-const CACHE_NAME = "shopping-shell-v3";
+const CACHE_NAME = "shopping-shell-v4";
 const SHELL = [
   "./",
   "./index.html",
