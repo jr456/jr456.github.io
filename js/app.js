@@ -1379,16 +1379,6 @@ async function moveCategory(index, direction) {
   }
 }
 
-// ── Service worker (PWA) ───────────────────────────────────────────────────
-
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
-  });
-}
-
 // Honor ?tab=… from manifest shortcuts and ?list=… deep links.
 {
   const params = new URLSearchParams(location.search);
