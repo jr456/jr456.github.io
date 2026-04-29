@@ -235,6 +235,7 @@ function resubscribeItems() {
   unsubItems = subscribeItems(state.activeListId, (items) => {
     state.items = items;
     renderItems();
+    renderCatalogue();
   });
 }
 
@@ -648,7 +649,6 @@ function itemRow(item) {
     const minus = document.createElement("button");
     minus.className = "bump"; minus.type = "button"; minus.textContent = "−";
     minus.title = "Decrease quantity";
-    minus.disabled = numeric <= 1;
     minus.addEventListener("click", () => bumpQuantity(item, -1));
     const plus = document.createElement("button");
     plus.className = "bump"; plus.type = "button"; plus.textContent = "+";
@@ -671,7 +671,10 @@ async function bumpQuantity(item, delta) {
   const current = numericQuantity(item.quantity);
   if (current === null) return; // free-text quantity; user must edit dialog
   let next = (current || 1) + delta;
-  if (next < 1) return;
+  if (next < 1) {
+    await deleteItem(state.activeListId, item.id, state.user);
+    return;
+  }
   // Treat 1 as "no quantity" so the row reads as a single thing.
   const newQty = next === 1 ? "" : String(next);
   await updateItem(state.activeListId, item.id,
@@ -778,16 +781,16 @@ function renderCatalogue() {
 
   for (const c of items) {
     const sec = getSection(c.section);
-    const row = document.createElement("div");
-    row.className = "cat-row";
-    const nameEl = document.createElement("span");
-    nameEl.className = "cat-name";
+    const row = document.createElement(“div”);
+    row.className = “cat-row”;
+    const nameEl = document.createElement(“span”);
+    nameEl.className = “cat-name”;
     nameEl.textContent = c.name;
-    const sectionEl = document.createElement("span");
-    sectionEl.className = "cat-section";
+    const sectionEl = document.createElement(“span”);
+    sectionEl.className = “cat-section”;
     sectionEl.textContent = `${sec.icon} ${sec.name}`;
-    const useEl = document.createElement("span");
-    useEl.className = "cat-use";
+    const useEl = document.createElement(“span”);
+    useEl.className = “cat-use”;
     if (c.useCount) {
       useEl.textContent = `× ${c.useCount}`;
       const last = formatRelative(c.lastUsedAt);
@@ -795,21 +798,39 @@ function renderCatalogue() {
     }
     row.append(nameEl, sectionEl, useEl);
 
-    const add = document.createElement("button");
-    add.className = "cat-add";
-    add.textContent = "＋ Add";
-    add.title = "Add to current list";
-    add.addEventListener("click", async () => {
+    const listItem = state.items.find(i => i.normalized === c.normalized && !i.done);
+    const numeric = listItem ? numericQuantity(listItem.quantity) : null;
+
+    if (listItem && numeric !== null) {
+      const bumpers = document.createElement(“div”);
+      bumpers.className = “item-bumpers”;
+      const minus = document.createElement(“button”);
+      minus.className = “bump”; minus.type = “button”; minus.textContent = “−”;
+      minus.title = “Decrease quantity”;
+      minus.addEventListener(“click”, () => bumpQuantity(listItem, -1));
+      const plus = document.createElement(“button”);
+      plus.className = “bump”; plus.type = “button”; plus.textContent = “+”;
+      plus.title = “Increase quantity”;
+      plus.addEventListener(“click”, () => bumpQuantity(listItem, +1));
+      bumpers.append(minus, plus);
+      row.append(bumpers);
+    }
+
+    const add = document.createElement(“button”);
+    add.className = “cat-add”;
+    add.textContent = listItem ? “＋ Add again” : “＋ Add”;
+    add.title = “Add to current list”;
+    add.addEventListener(“click”, async () => {
       if (!state.activeListId) return;
       await addItem(state.activeListId, c.name, state.user);
       toast(`Added ${c.name}`);
     });
 
-    const del = document.createElement("button");
-    del.className = "ghost";
-    del.textContent = "✕";
-    del.title = "Remove from catalogue";
-    del.addEventListener("click", async () => {
+    const del = document.createElement(“button”);
+    del.className = “ghost”;
+    del.textContent = “✕”;
+    del.title = “Remove from catalogue”;
+    del.addEventListener(“click”, async () => {
       if (!confirm(`Remove “${c.name}” from the catalogue?`)) return;
       await deleteCatalogueEntry(c.normalized);
     });
