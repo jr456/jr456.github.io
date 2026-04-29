@@ -423,7 +423,7 @@ newListForm.addEventListener("submit", async (e) => {
   state.activeListId = id;
   resubscribeItems();
   newListDialog.close();
-  toast(`Created “${name}”`);
+  toast(`Created "${name}"`);
 });
 
 function defaultListName() {
@@ -790,16 +790,16 @@ function renderCatalogue() {
 
   for (const c of items) {
     const sec = getSection(c.section);
-    const row = document.createElement(“div”);
-    row.className = “cat-row”;
-    const nameEl = document.createElement(“span”);
-    nameEl.className = “cat-name”;
+    const row = document.createElement("div");
+    row.className = "cat-row";
+    const nameEl = document.createElement("span");
+    nameEl.className = "cat-name";
     nameEl.textContent = c.name;
-    const sectionEl = document.createElement(“span”);
-    sectionEl.className = “cat-section”;
+    const sectionEl = document.createElement("span");
+    sectionEl.className = "cat-section";
     sectionEl.textContent = `${sec.icon} ${sec.name}`;
-    const useEl = document.createElement(“span”);
-    useEl.className = “cat-use”;
+    const useEl = document.createElement("span");
+    useEl.className = "cat-use";
     if (c.useCount) {
       useEl.textContent = `× ${c.useCount}`;
       const last = formatRelative(c.lastUsedAt);
@@ -811,36 +811,36 @@ function renderCatalogue() {
     const numeric = listItem ? numericQuantity(listItem.quantity) : null;
 
     if (listItem && numeric !== null) {
-      const bumpers = document.createElement(“div”);
-      bumpers.className = “item-bumpers”;
-      const minus = document.createElement(“button”);
-      minus.className = “bump”; minus.type = “button”; minus.textContent = “−”;
-      minus.title = “Decrease quantity”;
-      minus.addEventListener(“click”, () => bumpQuantity(listItem, -1));
-      const plus = document.createElement(“button”);
-      plus.className = “bump”; plus.type = “button”; plus.textContent = “+”;
-      plus.title = “Increase quantity”;
-      plus.addEventListener(“click”, () => bumpQuantity(listItem, +1));
+      const bumpers = document.createElement("div");
+      bumpers.className = "item-bumpers";
+      const minus = document.createElement("button");
+      minus.className = "bump"; minus.type = "button"; minus.textContent = "−";
+      minus.title = "Decrease quantity";
+      minus.addEventListener("click", () => bumpQuantity(listItem, -1));
+      const plus = document.createElement("button");
+      plus.className = "bump"; plus.type = "button"; plus.textContent = "+";
+      plus.title = "Increase quantity";
+      plus.addEventListener("click", () => bumpQuantity(listItem, +1));
       bumpers.append(minus, plus);
       row.append(bumpers);
     }
 
-    const add = document.createElement(“button”);
-    add.className = “cat-add”;
-    add.textContent = listItem ? “＋ Add again” : “＋ Add”;
-    add.title = “Add to current list”;
-    add.addEventListener(“click”, async () => {
+    const add = document.createElement("button");
+    add.className = "cat-add";
+    add.textContent = listItem ? "＋ Add again" : "＋ Add";
+    add.title = "Add to current list";
+    add.addEventListener("click", async () => {
       if (!state.activeListId) return;
       await addItem(state.activeListId, c.name, state.user);
       toast(`Added ${c.name}`);
     });
 
-    const del = document.createElement(“button”);
-    del.className = “ghost”;
-    del.textContent = “✕”;
-    del.title = “Remove from catalogue”;
-    del.addEventListener(“click”, async () => {
-      if (!confirm(`Remove “${c.name}” from the catalogue?`)) return;
+    const del = document.createElement("button");
+    del.className = "ghost";
+    del.textContent = "✕";
+    del.title = "Remove from catalogue";
+    del.addEventListener("click", async () => {
+      if (!confirm(`Remove "${c.name}" from the catalogue?`)) return;
       await deleteCatalogueEntry(c.normalized);
     });
 
@@ -899,7 +899,7 @@ function renderStores() {
     del.className = "danger";
     del.textContent = "Delete";
     del.addEventListener("click", async () => {
-      if (!confirm(`Delete store “${s.name}”?`)) return;
+      if (!confirm(`Delete store "${s.name}"?`)) return;
       await deleteStore(s.id);
     });
 
@@ -979,7 +979,7 @@ renameForm.addEventListener("submit", async (e) => {
 deleteListBtn.addEventListener("click", async () => {
   const list = state.lists.find(l => l.id === state.activeListId);
   if (!list) return;
-  if (!confirm(`Delete “${list.name}”? Items in this list will also be removed.`)) return;
+  if (!confirm(`Delete "${list.name}"? Items in this list will also be removed.`)) return;
   await deleteList(list.id);
   state.activeListId = null;
   renameDialog.close();
@@ -1170,7 +1170,7 @@ function renderSearchResults() {
     (i.normalized && i.normalized.includes(q))
   );
   if (matches.length === 0) {
-    searchStatus.textContent = `No matches for “${state.searchQuery}”.`;
+    searchStatus.textContent = `No matches for "${state.searchQuery}".`;
     return;
   }
   searchStatus.textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}.`;
@@ -1302,8 +1302,8 @@ categoryDeleteBtn.addEventListener("click", async () => {
   if (!section?.custom) return;
   const usedCount = countItemsInSection(editingCategoryId);
   const msg = usedCount > 0
-    ? `Delete “${section.name}”? ${usedCount} item${usedCount === 1 ? "" : "s"} in the current list use it and will move to Other.`
-    : `Delete “${section.name}”?`;
+    ? `Delete "${section.name}"? ${usedCount} item${usedCount === 1 ? "" : "s"} in the current list use it and will move to Other.`
+    : `Delete "${section.name}"?`;
   if (!confirm(msg)) return;
   await deleteSectionDoc(editingCategoryId);
   categoryDialog.close();
