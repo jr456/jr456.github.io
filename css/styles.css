@@ -286,6 +286,11 @@ button.small { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
   background: transparent; color: var(--ink-2);
   padding: 0.3rem 0.5rem;
 }
+.item-delete {
+  background: transparent; color: var(--ink-2);
+  padding: 0.3rem 0.5rem;
+}
+.item-delete:hover { color: var(--danger, #c0392b); }
 
 .cat-controls {
   display: flex; gap: 0.4rem; align-items: center;

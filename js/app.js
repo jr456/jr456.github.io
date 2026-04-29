@@ -664,7 +664,15 @@ function itemRow(item) {
   edit.textContent = "✎";
   edit.addEventListener("click", () => openItemDialog(item));
 
-  li.append(cb, lbl, txt, bumpers, edit);
+  const del = document.createElement("button");
+  del.className = "item-delete";
+  del.title = "Remove item";
+  del.textContent = "✕";
+  del.addEventListener("click", () =>
+    deleteItem(state.activeListId, item.id, state.user).catch(console.error)
+  );
+
+  li.append(cb, lbl, txt, bumpers, edit, del);
   return li;
 }
 
