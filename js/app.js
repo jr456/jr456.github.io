@@ -156,7 +156,8 @@ function startSubscriptions() {
     const visible = visibleLists();
     const active = lists.find(l => l.id === state.activeListId);
     if (!active || (active.archived && !state.showArchived)) {
-      state.activeListId = visible[0]?.id || lists[0].id;
+      if (active?.archived) state.showArchived = true; // reveal linked archived list
+      state.activeListId = active?.id || visible[0]?.id || lists[0].id;
       resubscribeItems();
     }
     renderListPicker();
@@ -1380,14 +1381,39 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-// Honor ?tab=… from manifest shortcuts.
+// Honor ?tab=… from manifest shortcuts and ?list=… deep links.
 {
   const params = new URLSearchParams(location.search);
   const t = params.get("tab");
   if (t && ["list", "search", "catalogue", "categories", "stores"].includes(t)) {
     state.currentTab = t;
   }
+  const linkedListId = params.get("list");
+  if (linkedListId) state.activeListId = linkedListId;
 }
+
+// ── Share list ─────────────────────────────────────────────────────────────
+
+document.getElementById("share-list").addEventListener("click", async () => {
+  if (!state.activeListId) return;
+  const url = `${location.origin}${location.pathname}?list=${state.activeListId}`;
+  const list = state.lists.find(l => l.id === state.activeListId);
+  const title = list?.name || "Shopping list";
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return; // user cancelled
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied!");
+  } catch {
+    toast(url);
+  }
+});
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 
